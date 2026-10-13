@@ -13,6 +13,8 @@ import nl.netonic.workspaces.ide.Tickets;
 import nl.netonic.workspaces.ide.ui.FinishTicketDialog;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.List;
+
 /** Checks for uncommitted / unpushed work, closes the tab, removes the worktrees and the ticket folder. */
 public final class FinishTicketAction extends WsAction {
   @Override
@@ -20,7 +22,7 @@ public final class FinishTicketAction extends WsAction {
     Ticket t = ActionContext.ticket(e);
     boolean enabled = t != null && !t.isMain();
     e.getPresentation().setEnabled(enabled);
-    e.getPresentation().setText(enabled ? "Finish Ticket " + t.getName() + "…" : "Finish Ticket…");
+    e.getPresentation().setText(enabled ? "Finish Ticket " + t.getName() + "…" : "Finish Ticket…", false);
   }
 
   @Override
@@ -34,9 +36,12 @@ public final class FinishTicketAction extends WsAction {
     Background.run(project, "Checking " + ticket.displayName(), (ops, log) -> ops.checkBeforeFinish(ticket), problems -> {
       FinishTicketDialog dialog = new FinishTicketDialog(project, ticket, problems);
       if (!dialog.showAndGet()) return;
-      Project open = Tickets.findOpenProject(ticket);
-      boolean finishingThisWindow = open != null && open == project;
-      if (open != null && !ProjectManager.getInstance().closeAndDispose(open)) return; // closing was cancelled
+      // the ticket's tab, plus e.g. LOGIN-42/backend opened as a project of its own
+      List<Project> toClose = projectsInside(List.of(ticket.getDir()));
+      boolean finishingThisWindow = toClose.contains(project);
+      for (Project p : toClose) {
+        if (!ProjectManager.getInstance().closeAndDispose(p)) return; // closing was cancelled
+      }
       Project reportTo = finishingThisWindow ? null : project;
 
       Background.run(reportTo, "Finishing " + ticket.displayName(),

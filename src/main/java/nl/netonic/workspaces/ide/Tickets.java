@@ -20,6 +20,7 @@ import javax.swing.JFrame;
 import javax.swing.Timer;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Finding, opening and focusing ticket projects. */
@@ -58,6 +59,9 @@ public final class Tickets {
     return t.isMain() || Workspace.looksLikeTicket(t.getDir()) ? t : null;
   }
 
+  /** Ticket folders being prepared / opened right now. */
+  private static final Set<Path> OPENING = ConcurrentHashMap.newKeySet();
+
   public static @Nullable Project findOpenProject(Ticket ticket) {
     Path dir = ticket.getDir().toAbsolutePath().normalize();
     for (Project p : ProjectManager.getInstance().getOpenProjects()) {
@@ -83,16 +87,26 @@ public final class Tickets {
       ProjectUtil.focusProjectWindow(existing, true);
       return;
     }
+    // double-click + Enter, or the switcher while it is still loading: prepare and open only once
+    Path dir = ticket.getDir().toAbsolutePath().normalize();
+    if (!OPENING.add(dir)) return;
     WorkspaceSettings.getInstance().addWorkspace(ticket.getWorkspace().getRoot());
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
       try {
         IdeaFiles.prepare(ticket);
       } catch (Exception e) {
+        OPENING.remove(dir);
         LOG.warn(e);
         Notifier.error(null, "Couldn't prepare " + ticket.displayName(), e.getMessage());
         return;
       }
-      ApplicationManager.getApplication().invokeLater(() -> openPrepared(ticket), ModalityState.nonModal());
+      ApplicationManager.getApplication().invokeLater(() -> {
+        try {
+          openPrepared(ticket);
+        } finally {
+          OPENING.remove(dir);
+        }
+      }, ModalityState.nonModal());
     });
   }
 

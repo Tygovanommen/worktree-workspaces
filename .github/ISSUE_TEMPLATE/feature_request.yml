@@ -1,0 +1,26 @@
+name: Feature request
+description: An idea that would make your ticket workflow smoother
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The workflow or annoyance, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: dropdown
+    id: stack
+    attributes:
+      label: Your stack
+      multiple: true
+      options:
+        - Laravel / PHP backend
+        - Symfony
+        - Nuxt / Vue
+        - Next / React
+        - Something else

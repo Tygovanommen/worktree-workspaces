@@ -58,7 +58,7 @@ public final class WorkspaceOps {
     Path target = checkNewRepoTarget(ws, repoName);
     log.step("Cloning " + url);
     Files.createDirectories(ws.mainDir());
-    git.run(ws.mainDir(), CLONE_TIMEOUT, "clone", url, repoName).orThrow("git clone failed");
+    git.run(ws.mainDir(), CLONE_TIMEOUT, "clone", "--", url, repoName).orThrow("git clone failed");
     registerRepo(ws, repoName, target, url);
   }
 
@@ -71,6 +71,11 @@ public final class WorkspaceOps {
     if (!Ticket.isGitDir(source)) throw new IOException(source + " is not a git checkout");
     if (Files.isRegularFile(source.resolve(".git"))) {
       throw new IOException(source + " is itself a worktree; adopt the main clone instead");
+    }
+    Workspace owner = Workspace.findContaining(source);
+    if (owner != null) {
+      // moving it would break that workspace's worktrees (and its main/ must never move)
+      throw new IOException(source + " belongs to workspace " + owner.getName() + "; clone it by URL instead");
     }
     Path target = checkNewRepoTarget(ws, repoName);
     if (target.startsWith(source)) throw new IOException("Can't move a folder into itself");
@@ -183,6 +188,8 @@ public final class WorkspaceOps {
     if (Files.exists(target)) throw new GitException(ws.getRoot().relativize(target) + " already exists");
 
     String base = baseBranch == null || baseBranch.isBlank() ? configuredBase(ws, repo, mainRepo) : baseBranch.trim();
+    checkBranchName(mainRepo, branch);
+    checkBranchName(mainRepo, base);
 
     log.step(repo + ": fetching origin/" + base);
     if (hasRemote(mainRepo)) {
@@ -193,11 +200,12 @@ public final class WorkspaceOps {
     }
 
     log.step(repo + ": creating worktree on " + branch);
+    GitRunner.Result add;
     if (refExists(mainRepo, "refs/heads/" + branch)) {
-      git.run(mainRepo, "worktree", "add", target.toString(), branch).orThrow("git worktree add failed");
+      add = git.run(mainRepo, CLONE_TIMEOUT, "worktree", "add", target.toString(), branch);
     } else if (refExists(mainRepo, "refs/remotes/origin/" + branch)) {
-      git.run(mainRepo, "worktree", "add", "--track", "-b", branch, target.toString(), "origin/" + branch)
-          .orThrow("git worktree add failed");
+      add = git.run(mainRepo, CLONE_TIMEOUT, "worktree", "add", "--track", "-b", branch, target.toString(),
+          "origin/" + branch);
     } else {
       String start;
       if (refExists(mainRepo, "refs/remotes/origin/" + base)) start = "origin/" + base;
@@ -206,14 +214,18 @@ public final class WorkspaceOps {
         log.warn(repo + ": base branch '" + base + "' not found, branching from main/" + repo + "'s HEAD");
         start = "HEAD";
       }
-      git.run(mainRepo, "worktree", "add", "--no-track", "-b", branch, target.toString(), start)
-          .orThrow("git worktree add failed");
+      add = git.run(mainRepo, CLONE_TIMEOUT, "worktree", "add", "--no-track", "-b", branch, target.toString(), start);
+    }
+    if (!add.ok()) {
+      // a half-made worktree (timeout, killed checkout) would block a retry with "already registered"
+      git.run(mainRepo, "worktree", "prune");
+      add.orThrow("git worktree add failed");
     }
 
     WorkspaceConfig.RepoConfig rc = ws.getConfig().getRepos().get(repo);
     List<String> copy = rc != null ? rc.getCopy() : WorkspaceConfig.DEFAULT_COPY;
     for (String entry : copy) {
-      if (entry.contains("..")) continue;
+      if (entry.contains("..") || Path.of(entry).isAbsolute()) continue;
       Path src = mainRepo.resolve(entry);
       if (!Files.exists(src)) continue;
       log.step(repo + ": copying " + entry);
@@ -222,6 +234,13 @@ public final class WorkspaceOps {
       } catch (IOException e) {
         log.warn(repo + ": could not copy " + entry + " (" + e.getMessage() + ")");
       }
+    }
+  }
+
+  /** Rejects names git wouldn't accept as a branch, including ones starting with '-' (read as an option). */
+  private void checkBranchName(Path repo, String name) throws GitException {
+    if (name.startsWith("-") || !git.run(repo, "check-ref-format", "--branch", name).ok()) {
+      throw new GitException("Invalid branch name: " + name);
     }
   }
 

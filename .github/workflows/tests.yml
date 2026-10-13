@@ -1,0 +1,28 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    # The core is plain Java + git, so it is tested without PhpStorm. The plugin itself is built locally
+    # with ./build.sh against an installed PhpStorm.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Core tests
+        run: |
+          mkdir -p build/core build/test
+          javac --release 21 -d build/core $(find src/main/java/nl/netonic/workspaces/core -name '*.java')
+          javac --release 21 -cp build/core -d build/test $(find src/test/java -name '*.java')
+          java -cp build/core:build/test nl.netonic.workspaces.core.CoreTests

@@ -16,6 +16,8 @@
       <li>A toolbar switcher and a <i>Workspaces</i> panel show every ticket with branch and git state.</li>
       <li><i>Finish ticket</i> checks for uncommitted / unpushed work, then removes the worktrees.</li>
     </ul>
+    <p>Free and open source on <a href="https://github.com/Tygovanommen/worktree-workspaces">GitHub</a>.
+       Found a bug? <i>Tools › Workspaces › Report an Issue…</i></p>
   ]]></description>
 
   <change-notes><![CDATA[
@@ -66,7 +68,7 @@
             text="Add Repo to Ticket" description="Give this ticket its own worktree of this repo"
             icon="AllIcons.General.Add"/>
     <action id="WorktreeWorkspaces.Reveal" class="nl.netonic.workspaces.ide.actions.SimpleActions$Reveal"
-            text="Reveal in Finder" description="Show the folder in Finder"/>
+            text="Reveal in File Manager" description="Show the folder in Finder / Explorer / the file manager"/>
     <action id="WorktreeWorkspaces.EditConfig" class="nl.netonic.workspaces.ide.actions.SimpleActions$EditConfig"
             text="Edit .workspace.json" description="Repos, base branches, files to copy, branch pattern"
             icon="AllIcons.Actions.Edit"/>
@@ -76,6 +78,12 @@
     <action id="WorktreeWorkspaces.MergeIntoTabs" class="nl.netonic.workspaces.ide.actions.SimpleActions$MergeIntoTabs"
             text="Open Tickets as Tabs in One Window"
             description="macOS: merge new ticket windows into tabs (Window › Merge All Project Windows)"/>
+    <action id="WorktreeWorkspaces.ReportIssue" class="nl.netonic.workspaces.ide.actions.SimpleActions$ReportIssue"
+            text="Report an Issue…" description="Open a bug report on GitHub with your PhpStorm and plugin versions filled in"
+            icon="AllIcons.General.ShowWarning"/>
+    <action id="WorktreeWorkspaces.OpenGitHub" class="nl.netonic.workspaces.ide.actions.SimpleActions$OpenGitHub"
+            text="Worktree Workspaces on GitHub" description="Docs, questions and stars"
+            icon="AllIcons.Vcs.Vendors.Github"/>
 
     <action id="WorktreeWorkspaces.ToolbarWidget" class="nl.netonic.workspaces.ide.actions.TicketSwitcherWidgetAction"
             text="Ticket Switcher" description="Switch ticket">
@@ -86,6 +94,9 @@
       <reference ref="WorktreeWorkspaces.MergeIntoTabs"/>
       <reference ref="WorktreeWorkspaces.EditConfig"/>
       <reference ref="WorktreeWorkspaces.AddExistingWorkspace"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.ReportIssue"/>
+      <reference ref="WorktreeWorkspaces.OpenGitHub"/>
     </group>
 
     <group id="WorktreeWorkspaces.Toolbar">
@@ -121,6 +132,9 @@
       <reference ref="WorktreeWorkspaces.NewWorkspace"/>
       <reference ref="WorktreeWorkspaces.AddRepo"/>
       <reference ref="WorktreeWorkspaces.AddExistingWorkspace"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.ReportIssue"/>
+      <reference ref="WorktreeWorkspaces.OpenGitHub"/>
       <add-to-group group-id="ToolsMenu" anchor="first"/>
     </group>
   </actions>

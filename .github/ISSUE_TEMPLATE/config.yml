@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/Tygovanommen/worktree-workspaces/discussions
+    about: How do I…? Is this a good fit for my setup? Ask here.

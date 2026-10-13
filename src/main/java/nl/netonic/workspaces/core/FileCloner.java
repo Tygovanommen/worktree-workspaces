@@ -37,15 +37,21 @@ public final class FileCloner {
       if (run(List.of("cp", "-R", "--reflink=auto", src.toString(), dst.toString()))) return Method.REFLINK_OR_COPY;
       deleteQuietly(dst);
     }
-    javaCopy(src, dst);
+    try {
+      javaCopy(src, dst);
+    } catch (IOException e) {
+      deleteQuietly(dst); // no half-copied vendor/ or node_modules/
+      throw e;
+    }
     return Method.COPY;
   }
 
   private static boolean run(List<String> cmd) {
     try {
-      Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+      // discard output instead of reading it, so a hung cp can't block us past the timeout
+      Process p = new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD)
+          .start();
       p.getOutputStream().close();
-      p.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
       if (!p.waitFor(30, TimeUnit.MINUTES)) {
         p.destroyForcibly();
         return false;
@@ -84,14 +90,24 @@ public final class FileCloner {
     });
   }
 
-  /** Recursively deletes a file or folder; symlinks are removed, never followed. */
+  /** Recursively deletes a file or folder; symlinks and Windows junctions are removed, never followed. */
   public static void deleteRecursively(Path path) throws IOException {
     if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return;
-    if (Files.isSymbolicLink(path) || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+    if (isLink(path) || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
       Files.delete(path);
       return;
     }
     Files.walkFileTree(path, new SimpleFileVisitor<>() {
+      @Override
+      public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+        // a junction looks like a plain directory to Java (isOther on Windows): unlink it, don't enter it
+        if (!dir.equals(path) && attrs.isOther()) {
+          Files.delete(dir);
+          return FileVisitResult.SKIP_SUBTREE;
+        }
+        return FileVisitResult.CONTINUE;
+      }
+
       @Override
       public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
         Files.delete(file);
@@ -105,6 +121,11 @@ public final class FileCloner {
         return FileVisitResult.CONTINUE;
       }
     });
+  }
+
+  private static boolean isLink(Path p) throws IOException {
+    return Files.isSymbolicLink(p)
+        || Files.readAttributes(p, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).isOther();
   }
 
   static void deleteQuietly(Path p) {

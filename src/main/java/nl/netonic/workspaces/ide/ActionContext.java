@@ -22,6 +22,8 @@ public final class ActionContext {
   public static @Nullable Ticket ticket(AnActionEvent e) {
     Ticket selected = e.getData(SELECTED_TICKET);
     if (selected != null) return selected;
+    // a workspace row is selected in the panel: don't fall back to this window's ticket of another workspace
+    if (e.getData(SELECTED_WORKSPACE) != null) return null;
     return Tickets.current(e.getProject());
   }
 

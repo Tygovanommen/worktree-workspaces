@@ -1,0 +1,84 @@
+name: Release
+
+# Push a tag v<version> (matching <version> in plugin.xml) to build the plugin and publish a GitHub release with the
+# zip as its download. Run it by hand (Actions › Release › Run workflow) to only build the zip as an artifact.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # The plugin compiles against PhpStorm's own jars; keep this at the since-build release (262 = 2026.2).
+  PHPSTORM_VERSION: 2026.2.3
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Cache PhpStorm
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/phpstorm
+          key: phpstorm-${{ env.PHPSTORM_VERSION }}
+
+      - name: Download PhpStorm ${{ env.PHPSTORM_VERSION }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          url=https://download.jetbrains.com/webide/PhpStorm-$PHPSTORM_VERSION.tar.gz
+          curl -fsSL -o /tmp/phpstorm.tar.gz "$url"
+          echo "$(curl -fsSL "$url.sha256" | cut -d' ' -f1)  /tmp/phpstorm.tar.gz" | sha256sum -c
+          # only what the build needs: platform jars, the Git plugin, and product-info.json for api-check
+          top=$(tar -tzf /tmp/phpstorm.tar.gz | head -1 | cut -d/ -f1)
+          mkdir -p ~/phpstorm
+          tar -xzf /tmp/phpstorm.tar.gz -C ~/phpstorm --strip-components=1 \
+            "$top/lib" "$top/plugins/vcs-git" "$top/product-info.json"
+          rm /tmp/phpstorm.tar.gz
+
+      - name: Version
+        id: version
+        run: |
+          version=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' src/main/resources/META-INF/plugin.xml | head -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match plugin.xml version $version"
+            exit 1
+          fi
+
+      - name: Build and test
+        run: |
+          export PHPSTORM_CONTENTS=~/phpstorm
+          ./build.sh
+          tools/api-check.sh | tee build/api-check.txt
+          tail -1 build/api-check.txt | grep -q none || { echo "::error::api-check reported problems"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worktree-workspaces-${{ steps.version.outputs.version }}
+          path: build/distributions/*.zip
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "build/distributions/worktree-workspaces-$VERSION.zip" \
+            --title "Worktree Workspaces $VERSION" --generate-notes --notes "$(cat <<EOF
+          **Install:** download \`worktree-workspaces-$VERSION.zip\` below, then PhpStorm › Settings › Plugins › ⚙ ›
+          **Install Plugin from Disk…** and restart. Requires PhpStorm 2026.2+.
+
+          **Get updates in PhpStorm:** Settings › Plugins › ⚙ › Manage Plugin Repositories… › add
+          \`https://raw.githubusercontent.com/${{ github.repository }}/main/updatePlugins.xml\`
+          EOF
+          )"

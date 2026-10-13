@@ -14,6 +14,7 @@ import com.intellij.openapi.vcs.VcsDirectoryMapping;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.core.TicketRepo;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -91,8 +92,7 @@ public final class ProjectRoots {
     boolean changed = false;
     for (VcsDirectoryMapping m : vcs.getDirectoryMappings()) {
       String dir = m.getDirectory().isEmpty() ? projectDir : FileUtil.toSystemIndependentName(m.getDirectory());
-      boolean inWorkspace = FileUtil.isAncestor(wsRoot, dir, false);
-      if (inWorkspace && !wanted.contains(dir)) {
+      if (isManaged(dir, projectDir, wsRoot) && !wanted.contains(dir)) {
         changed = true; // e.g. the "<Project>" root mapping: the ticket folder itself is no repo
         continue;
       }
@@ -106,6 +106,21 @@ public final class ProjectRoots {
       }
     }
     if (changed) vcs.setDirectoryMappings(result);
+  }
+
+  /**
+   * Mappings the plugin owns: the ticket folder, a ticket or main/ folder, or a repo inside one. Deeper roots the
+   * user added (a composer path package with its own .git) are left alone.
+   */
+  private static boolean isManaged(String dir, String projectDir, String wsRoot) {
+    if (dir.equals(projectDir)) return true;
+    String parent = parent(dir);
+    return parent != null && (parent.equals(wsRoot) || wsRoot.equals(parent(parent)));
+  }
+
+  private static @Nullable String parent(String dir) {
+    int slash = dir.lastIndexOf('/');
+    return slash > 0 ? dir.substring(0, slash) : null;
   }
 
   private static String url(Path p) {

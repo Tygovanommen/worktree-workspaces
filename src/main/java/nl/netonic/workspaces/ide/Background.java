@@ -49,8 +49,9 @@ public final class Background {
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
           throw e;
         } catch (Exception e) {
-          LOG.info(title + " failed", e);
-          Notifier.error(project, title + " failed", e.getMessage());
+          LOG.warn(title + " failed", e);
+          Notifier.error(project, title + " failed",
+              e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName() + " (details in idea.log)");
           WorkspaceModel.getInstance().refresh();
           return;
         }

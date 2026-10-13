@@ -91,6 +91,11 @@ public final class NewWorkspaceDialog extends DialogWrapper {
   protected @Nullable ValidationInfo doValidate() {
     String name = workspaceName();
     if (!Workspace.isValidName(name)) return new ValidationInfo("Use letters, digits, '.', '-' or '_'", nameField);
+    String location = locationField.getText().trim();
+    if (location.isEmpty()) return new ValidationInfo("Choose a folder", locationField);
+    if (!location.startsWith("~/") && !Path.of(location).isAbsolute()) {
+      return new ValidationInfo("Use a full path, e.g. ~/PhpstormProjects", locationField);
+    }
     Path parent;
     try {
       parent = parentFolder();

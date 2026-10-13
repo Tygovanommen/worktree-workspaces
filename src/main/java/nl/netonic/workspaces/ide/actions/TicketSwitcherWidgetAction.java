@@ -25,7 +25,7 @@ public final class TicketSwitcherWidgetAction extends ExpandableComboAction impl
     boolean anyWorkspace = t != null || !WorkspaceSettings.getInstance().workspaceRoots().isEmpty();
     e.getPresentation().setEnabledAndVisible(anyWorkspace);
     if (!anyWorkspace) return;
-    e.getPresentation().setText(t != null ? t.getWorkspace().getName() + " / " + t.getName() : "Workspaces");
+    e.getPresentation().setText(t != null ? t.getWorkspace().getName() + " / " + t.getName() : "Workspaces", false);
     e.getPresentation().setDescription("Switch ticket");
     e.getPresentation().setIcon(t != null && t.isMain() ? AllIcons.Nodes.HomeFolder : AllIcons.Vcs.Branch);
   }

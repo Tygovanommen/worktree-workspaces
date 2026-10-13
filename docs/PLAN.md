@@ -1,8 +1,6 @@
 # Worktree Workspaces — v1 plan
 
-Plan agreed on 13 Oct 2026, before building. Live version (with comments):
-[PhpStorm Workspaces & Worktrees plugin — v1 plan](https://claude.ai/code/artifact/cd4e1963-b20e-498f-899d-7e1707fe65e0).
-Where the build differs from the plan, it says so below; `CLAUDE.md` describes the code as it is.
+Plan agreed on 13 Oct 2026, before building. Where the build differs from the plan, it says so below; `CLAUDE.md` describes the code as it is.
 
 ## Problem
 

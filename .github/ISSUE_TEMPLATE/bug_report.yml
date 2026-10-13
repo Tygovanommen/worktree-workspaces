@@ -1,0 +1,50 @@
+name: Bug report
+description: Something broke or behaved unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time! **Tools › Workspaces › Report an Issue…** in PhpStorm opens this form with the
+        versions below already filled in.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. New Ticket › LOGIN-42 with backend + frontend
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: layout
+    attributes:
+      label: Workspace layout
+      description: Your `.workspace.json` (remove URLs you'd rather not share) and which repos the ticket uses.
+      render: json
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Help › Show Log in Finder/Explorer › `idea.log`. Paste lines mentioning `nl.netonic.workspaces`.
+      render: text
+  - type: input
+    id: phpstorm
+    attributes:
+      label: PhpStorm version
+      placeholder: PhpStorm 2026.2.3 (PS-262.10968.76)
+    validations:
+      required: true
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Mac OS X 26.0 (aarch64)

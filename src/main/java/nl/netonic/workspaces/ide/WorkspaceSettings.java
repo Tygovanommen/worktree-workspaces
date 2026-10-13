@@ -23,6 +23,7 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     public List<String> workspaces = new ArrayList<>();
     public boolean mergeWindowsIntoTabs = true;
     public String lastParentFolder = "";
+    public int ticketsCreated = 0;
   }
 
   private SettingsState state = new SettingsState();
@@ -81,6 +82,11 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     Path home = Path.of(System.getProperty("user.home"));
     Path projects = home.resolve("PhpstormProjects");
     return Files.isDirectory(projects) ? projects : home;
+  }
+
+  /** @return the number of tickets created with the plugin so far, including this one */
+  public synchronized int countTicketCreated() {
+    return ++state.ticketsCreated;
   }
 
   public void setLastParentFolder(Path p) {

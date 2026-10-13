@@ -16,6 +16,7 @@ import nl.netonic.workspaces.core.TicketRepo;
 import nl.netonic.workspaces.core.Workspace;
 import nl.netonic.workspaces.ide.ActionContext;
 import nl.netonic.workspaces.ide.Background;
+import nl.netonic.workspaces.ide.Feedback;
 import nl.netonic.workspaces.ide.IdeGit;
 import nl.netonic.workspaces.ide.ProjectRoots;
 import nl.netonic.workspaces.ide.Tickets;
@@ -129,7 +130,7 @@ public final class SimpleActions {
       Ticket t = e.getData(ActionContext.SELECTED_TICKET);
       boolean ok = r != null && t != null && !t.isMain() && r.kind() == TicketRepo.Kind.ATTACHED;
       e.getPresentation().setEnabledAndVisible(ok);
-      if (ok) e.getPresentation().setText("Add " + r.name() + " to " + t.getName());
+      if (ok) e.getPresentation().setText("Add " + r.name() + " to " + t.getName(), false);
     }
 
     @Override
@@ -156,6 +157,22 @@ public final class SimpleActions {
         if (st.branch() != null && !st.branch().startsWith("(")) return st.branch();
       }
       return t.getWorkspace().getConfig().branchFor(t.getName());
+    }
+  }
+
+  /** Open the GitHub bug report form, pre-filled with PhpStorm / plugin / OS versions. */
+  public static final class ReportIssue extends WsAction {
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      Feedback.reportIssue();
+    }
+  }
+
+  /** Open the GitHub repo (star it, read the docs, ask a question). */
+  public static final class OpenGitHub extends WsAction {
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      Feedback.openRepo();
     }
   }
 

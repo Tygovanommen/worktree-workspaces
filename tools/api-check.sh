@@ -6,6 +6,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PS="${PHPSTORM_CONTENTS:-$HOME/Applications/PhpStorm.app/Contents}"
+# PhpStorm's bundled runtime: jbr/Contents/Home on macOS, jbr/ in the Linux / Windows layout
+if [ -z "${JAVA_HOME:-}" ]; then
+  if [ -d "$PS/jbr/Contents/Home" ]; then JAVA_HOME="$PS/jbr/Contents/Home"; else JAVA_HOME="$PS/jbr"; fi
+fi
 JAVAC="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 ASM="$PS/lib/intellij.libraries.asm.jar"
@@ -13,6 +17,8 @@ CP=$(find "$PS/lib" "$PS/plugins/vcs-git/lib" -name '*.jar' | tr '\n' ':')
 
 mkdir -p build/tools
 "$JAVAC" -cp "$ASM" -d build/tools tools/ApiCheck.java
+# macOS keeps product-info.json in Resources/, the Linux / Windows layout at the top
+INFO="$PS/Resources/product-info.json"; [ -f "$INFO" ] || INFO="$PS/product-info.json"
 python3 -c "import json,sys; print('\n'.join(json.load(open(sys.argv[1]))['launch'][0]['bootClassPathJarNames']))" \
-  "$PS/Resources/product-info.json" > build/tools/boot.txt
+  "$INFO" > build/tools/boot.txt
 "$JAVA" -cp "$ASM:build/tools" ApiCheck build/main "$CP" build/tools/boot.txt

@@ -9,6 +9,7 @@ import nl.netonic.workspaces.core.Workspace;
 import nl.netonic.workspaces.core.WorkspaceOps;
 import nl.netonic.workspaces.ide.ActionContext;
 import nl.netonic.workspaces.ide.Background;
+import nl.netonic.workspaces.ide.Feedback;
 import nl.netonic.workspaces.ide.Tickets;
 import nl.netonic.workspaces.ide.ui.NewTicketDialog;
 import org.jetbrains.annotations.NotNull;
@@ -39,6 +40,9 @@ public final class NewTicketAction extends WsAction {
     List<WorkspaceOps.RepoChoice> choices = dialog.choices();
     Background.run(project, "Creating ticket " + key,
         (ops, log) -> ops.createTicket(ws, key, branch, choices, log),
-        Tickets::open);
+        ticket -> {
+          Tickets.open(ticket);
+          Feedback.ticketCreated(project);
+        });
   }
 }

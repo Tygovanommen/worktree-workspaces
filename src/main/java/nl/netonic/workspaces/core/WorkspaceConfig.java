@@ -2,8 +2,10 @@ package nl.netonic.workspaces.core;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +35,10 @@ public final class WorkspaceConfig {
   private String name;
   private String branchPattern = DEFAULT_BRANCH_PATTERN;
   private final LinkedHashMap<String, RepoConfig> repos = new LinkedHashMap<>();
+  /** Fields this version doesn't know (written by a newer one): kept as-is on save. */
+  private final LinkedHashMap<String, Object> extra = new LinkedHashMap<>();
+  private static final List<String> KNOWN = List.of("name", "branchPattern", "repos");
+  private static final List<String> KNOWN_REPO = List.of("url", "baseBranch", "copy");
 
   public WorkspaceConfig(String name) {
     this.name = name;
@@ -69,10 +75,14 @@ public final class WorkspaceConfig {
         ? file.getParent().getFileName().toString() : "workspace";
     WorkspaceConfig cfg = new WorkspaceConfig(str(root.get("name"), fallbackName));
     cfg.setBranchPattern(str(root.get("branchPattern"), DEFAULT_BRANCH_PATTERN));
+    keepUnknown(root, KNOWN, cfg.extra);
     if (root.get("repos") instanceof Map<?, ?> repos) {
       for (Map.Entry<?, ?> e : repos.entrySet()) {
+        // the name becomes a folder under main/ and every ticket: no "../x" or "a/b"
+        if (!Workspace.isValidName(String.valueOf(e.getKey()))) continue;
         RepoConfig rc = new RepoConfig();
         if (e.getValue() instanceof Map<?, ?> r) {
+          keepUnknown(r, KNOWN_REPO, rc.extra);
           rc.setBaseBranch(str(r.get("baseBranch"), null));
           rc.setUrl(str(r.get("url"), null));
           if (r.get("copy") instanceof List<?> l) {
@@ -98,10 +108,26 @@ public final class WorkspaceConfig {
       if (rc.getUrl() != null) r.put("url", rc.getUrl());
       if (rc.getBaseBranch() != null) r.put("baseBranch", rc.getBaseBranch());
       r.put("copy", new ArrayList<Object>(rc.getCopy()));
+      r.putAll(rc.extra);
       rs.put(e.getKey(), r);
     }
     root.put("repos", rs);
-    Files.writeString(file, Json.write(root), StandardCharsets.UTF_8);
+    root.putAll(extra);
+    // write next to it and move over, so a crash never leaves a truncated config
+    Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+    Files.writeString(tmp, Json.write(root), StandardCharsets.UTF_8);
+    try {
+      Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    } catch (AtomicMoveNotSupportedException e) {
+      Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+    }
+  }
+
+  private static void keepUnknown(Map<?, ?> from, List<String> known, Map<String, Object> into) {
+    for (Map.Entry<?, ?> e : from.entrySet()) {
+      String key = String.valueOf(e.getKey());
+      if (!known.contains(key)) into.put(key, e.getValue());
+    }
   }
 
   private static String str(Object o, String fallback) {
@@ -115,6 +141,7 @@ public final class WorkspaceConfig {
     private String baseBranch;
     private String url;
     private List<String> copy = new ArrayList<>(DEFAULT_COPY);
+    private final LinkedHashMap<String, Object> extra = new LinkedHashMap<>();
 
     public String getBaseBranch() { return baseBranch; }
     public void setBaseBranch(String b) { baseBranch = b == null || b.isBlank() ? null : b.trim(); }

@@ -18,6 +18,7 @@ public final class Json {
   }
 
   public static Object parse(String text) {
+    if (text.startsWith("\uFEFF")) text = text.substring(1); // byte-order mark (Windows Notepad)
     Json p = new Json(text);
     p.ws();
     Object v = p.value();

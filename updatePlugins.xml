@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Custom plugin repository, so PhpStorm offers updates without the JetBrains Marketplace.
+  Users add this URL under Settings › Plugins › ⚙ › Manage Plugin Repositories…:
+    https://raw.githubusercontent.com/Tygovanommen/worktree-workspaces/main/updatePlugins.xml
+  On release: bump version + url to the new GitHub release asset (tools/release.sh does this).
+-->
+<plugins>
+  <plugin id="nl.netonic.worktree-workspaces"
+          url="https://github.com/Tygovanommen/worktree-workspaces/releases/download/v0.1.0/worktree-workspaces-0.1.0.zip"
+          version="0.1.0">
+    <idea-version since-build="262"/>
+    <name>Worktree Workspaces</name>
+    <vendor url="https://netonic.nl">Netonic</vendor>
+    <description>One PhpStorm window, one tab per ticket: backend and frontend git worktrees side by side.</description>
+  </plugin>
+</plugins>

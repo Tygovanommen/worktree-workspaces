@@ -39,10 +39,13 @@ public final class GitRunner {
     ProcessBuilder pb = new ProcessBuilder(cmd);
     if (dir != null) pb.directory(dir.toFile());
     pb.environment().putAll(env);
+    // inherited from a hook or a terminal, these would point every command at another repo
+    for (String v : List.of("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")) pb.environment().remove(v);
     pb.environment().put("GIT_TERMINAL_PROMPT", "0");
     pb.environment().put("GIT_OPTIONAL_LOCKS", "0");
+    Process p = null;
     try {
-      Process p = pb.start();
+      p = pb.start();
       p.getOutputStream().close();
       StreamReader out = new StreamReader(p.getInputStream());
       StreamReader err = new StreamReader(p.getErrorStream());
@@ -59,6 +62,7 @@ public final class GitRunner {
     } catch (IOException e) {
       return new Result(cmd, -1, "", "Could not run git (" + git + "): " + e.getMessage());
     } catch (InterruptedException e) {
+      p.destroyForcibly();
       Thread.currentThread().interrupt();
       return new Result(cmd, -1, "", "Interrupted");
     }

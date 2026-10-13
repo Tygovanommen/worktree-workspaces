@@ -24,7 +24,16 @@ final class TicketPopups {
     Ticket current = Tickets.current(project);
     DefaultActionGroup group = new DefaultActionGroup();
     WorkspaceModel model = WorkspaceModel.getInstance();
-    if (!model.isLoaded()) model.refresh();
+    if (!model.isLoaded()) {
+      model.refresh();
+      AnAction loading = new DumbAwareAction() {
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent e) {}
+      };
+      loading.getTemplatePresentation().setText("Loading tickets…");
+      loading.getTemplatePresentation().setEnabled(false);
+      group.add(loading);
+    }
     for (WorkspaceModel.WorkspaceView wv : model.snapshot()) {
       if (wv.workspace() == null) continue;
       group.addSeparator(wv.name());
@@ -45,8 +54,10 @@ final class TicketPopups {
     private final Ticket ticket;
 
     OpenTicket(Ticket ticket, boolean current) {
-      super(ticket.getName(),
-          ticket.getDir().toString(),
+      // setText(…, false): an underscore in FIX_LOGIN is part of the name, not a mnemonic
+      getTemplatePresentation().setText(ticket.getName(), false);
+      getTemplatePresentation().setDescription(ticket.getDir().toString());
+      getTemplatePresentation().setIcon(
           current ? AllIcons.Actions.Checked : ticket.isMain() ? AllIcons.Nodes.HomeFolder : AllIcons.Vcs.Branch);
       this.ticket = ticket;
     }

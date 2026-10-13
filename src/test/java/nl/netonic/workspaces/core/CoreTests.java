@@ -22,6 +22,7 @@ public final class CoreTests {
     test("porcelain v2 parsing", CoreTests::porcelainParse);
     test("full flow: workspace, adopt, clone, tickets, finish", CoreTests::fullFlow);
     test("invalid names and main protection", CoreTests::guards);
+    test("delete never follows symlinks", CoreTests::deleteKeepsLinkTargets);
 
     System.out.println();
     System.out.println(passed + " passed, " + failed.size() + " failed");
@@ -67,6 +68,7 @@ public final class CoreTests {
     } catch (IllegalArgumentException expected) {
       // ok
     }
+    eq(Map.of("a", 1.0), Json.parse("\uFEFF{\"a\": 1}"), "byte-order mark skipped");
   }
 
   static void configLoadSave() throws IOException {
@@ -86,6 +88,20 @@ public final class CoreTests {
     WorkspaceConfig c2 = WorkspaceConfig.load(f);
     eq("bugfix/X-1", c2.branchFor("X-1"), "pattern saved");
     eq(WorkspaceConfig.DEFAULT_COPY, c2.getRepos().get("backend").getCopy(), "copy saved");
+
+    // fields from a newer version survive a save by this one; unsafe repo names are ignored
+    Files.writeString(f, """
+        { "name": "n", "db": {"perTicket": true},
+          "repos": { "backend": { "baseBranch": "develop", "setup": ["composer install"] }, "../evil": {} } }
+        """);
+    WorkspaceConfig c3 = WorkspaceConfig.load(f);
+    eq(List.of("backend"), new ArrayList<>(c3.getRepos().keySet()), "unsafe repo name skipped");
+    c3.save(f);
+    Map<?, ?> saved = (Map<?, ?>) Json.parse(Files.readString(f));
+    eq(Map.of("perTicket", true), saved.get("db"), "unknown top-level field kept");
+    eq(List.of("composer install"), ((Map<?, ?>) ((Map<?, ?>) saved.get("repos")).get("backend")).get("setup"),
+        "unknown repo field kept");
+    check(!Files.exists(dir.resolve(WorkspaceConfig.FILE_NAME + ".tmp")), "no temp file left");
   }
 
   static void porcelainParse() {
@@ -227,6 +243,7 @@ public final class CoreTests {
     WorkspaceOps.FinishResult notForced = ops.finishTicket(login, false, false, WorkspaceOps.Log.NONE);
     check(!notForced.folderRemoved(), "dirty ticket not removed without force");
     check(Files.isDirectory(login.getDir()), "folder kept");
+    check(Files.isDirectory(login.getDir().resolve("backend")), "all-or-nothing: clean backend worktree kept too");
 
     WorkspaceOps.FinishResult forced = ops.finishTicket(ws.ticket("LOGIN-42"), true, true, WorkspaceOps.Log.NONE);
     check(forced.folderRemoved(), "forced finish removes folder: " + forced.messages());
@@ -237,6 +254,17 @@ public final class CoreTests {
         "merged (no new commits) frontend branch deleted");
     String wtList = git.run(ws.mainDir().resolve("backend"), "worktree", "list").out();
     check(!wtList.contains("LOGIN-42"), "worktree pruned: " + wtList);
+
+    // branch names git would read as an option are rejected before anything runs
+    for (String bad : List.of("--orphan", "a..b")) {
+      try {
+        ops.addWorktree(ws, ws.ticket("BAD-1"), "backend", bad, null, WorkspaceOps.Log.NONE);
+        throw new AssertionError("accepted branch '" + bad + "'");
+      } catch (GitException expected) {
+        // ok
+      }
+    }
+    check(!Files.exists(ws.getRoot().resolve("BAD-1")), "nothing created for a bad branch");
 
     // a non-ticket folder is not listed, and finishing never deletes unknown files
     Files.createDirectories(ws.getRoot().resolve("docs"));
@@ -286,6 +314,30 @@ public final class CoreTests {
     } catch (IOException expected) {
       // ok
     }
+
+    // a clone in another workspace's main/ is never moved
+    Path otherClone = ws.mainDir().resolve("r");
+    GitRunner.fromSystem().run(tmp, "init", "-q", otherClone.toString()).orThrow("init");
+    Workspace w2 = ops.createWorkspace(tmp, "w2");
+    try {
+      ops.adoptRepo(w2, "r", otherClone, WorkspaceOps.Log.NONE);
+      throw new AssertionError("adopted a repo from another workspace");
+    } catch (IOException expected) {
+      // ok
+    }
+    check(Files.isDirectory(otherClone.resolve(".git")), "other workspace's clone untouched");
+  }
+
+  static void deleteKeepsLinkTargets() throws Exception {
+    Path tmp = Files.createTempDirectory("links");
+    Path outside = Files.createDirectories(tmp.resolve("outside"));
+    Files.writeString(outside.resolve("precious.txt"), "keep\n");
+    Path ticket = Files.createDirectories(tmp.resolve("T-1/.idea"));
+    Files.createSymbolicLink(ticket.resolve("linked-dir"), outside);
+    Files.createSymbolicLink(ticket.resolve("linked-file"), outside.resolve("precious.txt"));
+    FileCloner.deleteRecursively(tmp.resolve("T-1"));
+    check(!Files.exists(tmp.resolve("T-1")), "ticket folder removed");
+    check(Files.isRegularFile(outside.resolve("precious.txt")), "symlink target kept");
   }
 
   // --------------------------------------------------------------- helpers
