@@ -1,11 +1,17 @@
 name: Release
 
-# Push a tag v<version> (matching <version> in plugin.xml) to build the plugin and publish a GitHub release with the
-# zip as its download. Run it by hand (Actions › Release › Run workflow) to only build the zip as an artifact.
+# Actions › Release › Run workflow: builds the plugin and publishes release v<version> (from plugin.xml) with the zip
+# as its download; the tag is created on the run's commit. Untick "publish" to only build the zip as an artifact.
+# Pushing a tag v<version> by hand does the same.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish release v<version> from plugin.xml (untick to only build the zip)
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -68,12 +74,17 @@ jobs:
           path: build/distributions/*.zip
 
       - name: Publish release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "build/distributions/worktree-workspaces-$VERSION.zip" \
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists: bump <version> in plugin.xml first"
+            exit 1
+          fi
+          # creates tag v<version> on this commit when it doesn't exist yet
+          gh release create "v$VERSION" "build/distributions/worktree-workspaces-$VERSION.zip" --target "$GITHUB_SHA" \
             --title "Worktree Workspaces $VERSION" --generate-notes --notes "$(cat <<EOF
           **Install:** download \`worktree-workspaces-$VERSION.zip\` below, then PhpStorm › Settings › Plugins › ⚙ ›
           **Install Plugin from Disk…** and restart. Requires PhpStorm 2026.2+.

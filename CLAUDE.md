@@ -58,15 +58,16 @@ tools/api-check.sh     # must end with "problems: none"
 
 - PhpStorm 2026.2's jars are Java 25 class files, so javac must be 25; output targets `--release 21`.
   `JAVA_HOME` defaults to PhpStorm's bundled JBR (has `javac`, no `jar`: `build.sh` falls back to `zip`).
-- CI: `tests.yml` runs `CoreTests` on every push (macOS + Linux, no PhpStorm). `release.yml` runs on a `v*` tag:
+- CI: `tests.yml` runs `CoreTests` on every push (macOS + Linux, no PhpStorm). `release.yml` runs by hand (Actions › Release ›
+  Run workflow; creates tag `v<version>` itself) or on a pushed `v*` tag:
   downloads PhpStorm `PHPSTORM_VERSION` for Linux (sha256-checked, cached, only `lib/`, `plugins/vcs-git/`,
   `product-info.json`), runs `build.sh` + `api-check.sh`, and publishes the GitHub release with the zip. Keep
   `PHPSTORM_VERSION` on the `since-build` release. `build.sh` / `api-check.sh` accept both the macOS and Linux layout.
 - No Gradle setup yet. If you add one (IntelliJ Platform Gradle Plugin 2.x, `phpstorm("2026.2")`), keep `build.sh`
   working or replace it in the README.
 - Release: bump `<version>` + `<change-notes>` in `plugin.xml`, run `tools/release.sh` (local build + API check,
-  points `updatePlugins.xml` at the new release), commit, `git tag v<version>`, push the tag. `release.yml` fails if
-  the tag doesn't match `<version>`.
+  points `updatePlugins.xml` at the new release), commit, push, then Actions › Release › Run workflow. It fails if
+  release `v<version>` already exists, or if a pushed tag doesn't match `<version>`.
 - `Feedback.REPO` and the URLs in `README.md`, `updatePlugins.xml`, `.github/` assume
   `github.com/Tygovanommen/worktree-workspaces`; change them together if the repo moves.
 
