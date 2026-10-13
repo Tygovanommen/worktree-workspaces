@@ -1,0 +1,25 @@
+package nl.netonic.workspaces.ide;
+
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.startup.ProjectActivity;
+import kotlin.Unit;
+import kotlin.coroutines.Continuation;
+import nl.netonic.workspaces.core.Ticket;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+/** When a ticket project opens: remember its workspace and make sure attached repos + Git roots are set. */
+public final class TicketStartupActivity implements ProjectActivity {
+  @Override
+  public @Nullable Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
+    Tickets.invalidateCache();
+    Ticket ticket = Tickets.current(project);
+    if (ticket != null) {
+      WorkspaceSettings.getInstance().addWorkspace(ticket.getWorkspace().getRoot());
+      ProjectRoots.syncLater(project, ticket);
+    }
+    WorkspaceModel.getInstance().refreshIfStale(2_000);
+    WorkspaceModel.getInstance().notifyChanged();
+    return Unit.INSTANCE;
+  }
+}

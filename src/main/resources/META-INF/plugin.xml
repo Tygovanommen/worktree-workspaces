@@ -1,0 +1,127 @@
+<idea-plugin>
+  <id>nl.netonic.worktree-workspaces</id>
+  <name>Worktree Workspaces</name>
+  <version>0.1.0</version>
+  <vendor url="https://netonic.nl">Netonic</vendor>
+  <idea-version since-build="262"/>
+
+  <description><![CDATA[
+    <p>Work on several tickets across a backend and a frontend repo without juggling windows.</p>
+    <ul>
+      <li>A <b>workspace</b> is one folder per client: <code>main/</code> holds the real clones,
+          every ticket gets its own folder with git worktrees of the repos it touches.</li>
+      <li>Each ticket opens as one tab (<i>klant-x · LOGIN-42</i>) holding all its repos.</li>
+      <li><code>.env</code>, <code>vendor/</code> and <code>node_modules/</code> are copied from main
+          with APFS clones: instant, no extra disk space.</li>
+      <li>A toolbar switcher and a <i>Workspaces</i> panel show every ticket with branch and git state.</li>
+      <li><i>Finish ticket</i> checks for uncommitted / unpushed work, then removes the worktrees.</li>
+    </ul>
+  ]]></description>
+
+  <change-notes><![CDATA[
+    <p>0.1.0 — first version: workspaces, tickets as tabs, toolbar switcher, Workspaces panel, finish ticket.</p>
+  ]]></change-notes>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends>Git4Idea</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="Workspaces" anchor="left" secondary="false" icon="/icons/workspaces.svg"
+                factoryClass="nl.netonic.workspaces.ide.ui.WorkspacesToolWindowFactory"/>
+    <postStartupActivity implementation="nl.netonic.workspaces.ide.TicketStartupActivity"/>
+    <notificationGroup id="Worktree Workspaces" displayType="BALLOON"/>
+  </extensions>
+
+  <applicationListeners>
+    <listener class="nl.netonic.workspaces.ide.RefreshListeners$OnActivation"
+              topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+    <listener class="nl.netonic.workspaces.ide.RefreshListeners$OnProjectClose"
+              topic="com.intellij.openapi.project.ProjectCloseListener"/>
+  </applicationListeners>
+
+  <actions>
+    <action id="WorktreeWorkspaces.NewTicket" class="nl.netonic.workspaces.ide.actions.NewTicketAction"
+            text="New Ticket…" description="Create a ticket folder with a worktree per repo and open it as a tab"
+            icon="AllIcons.General.Add"/>
+    <action id="WorktreeWorkspaces.NewWorkspace" class="nl.netonic.workspaces.ide.actions.NewWorkspaceAction"
+            text="New Workspace…" description="Create a workspace folder and clone or move its repos into main/"
+            icon="AllIcons.Actions.NewFolder"/>
+    <action id="WorktreeWorkspaces.AddRepo" class="nl.netonic.workspaces.ide.actions.AddRepoAction"
+            text="Add Repo to Workspace…" description="Clone a repo into main/ or move an existing checkout there"
+            icon="AllIcons.Vcs.Clone"/>
+    <action id="WorktreeWorkspaces.AddExistingWorkspace" class="nl.netonic.workspaces.ide.actions.AddExistingWorkspaceAction"
+            text="Add Existing Workspace…" description="Register a folder that already has a .workspace.json"
+            icon="AllIcons.Actions.AddDirectory"/>
+    <action id="WorktreeWorkspaces.FinishTicket" class="nl.netonic.workspaces.ide.actions.FinishTicketAction"
+            text="Finish Ticket…" description="Close the tab and remove the ticket's worktrees and folder"
+            icon="AllIcons.Actions.Commit"/>
+    <action id="WorktreeWorkspaces.SwitchTicket" class="nl.netonic.workspaces.ide.actions.SwitchTicketAction"
+            text="Switch Ticket…" description="Jump to another ticket tab" icon="AllIcons.Vcs.Branch"/>
+    <action id="WorktreeWorkspaces.Refresh" class="nl.netonic.workspaces.ide.actions.SimpleActions$Refresh"
+            text="Refresh" description="Re-scan workspaces and git state" icon="AllIcons.Actions.Refresh"/>
+    <action id="WorktreeWorkspaces.OpenSelected" class="nl.netonic.workspaces.ide.actions.SimpleActions$OpenSelected"
+            text="Open as Tab" description="Open or focus this ticket"/>
+    <action id="WorktreeWorkspaces.AddWorktreeToTicket"
+            class="nl.netonic.workspaces.ide.actions.SimpleActions$AddWorktreeToTicket"
+            text="Add Repo to Ticket" description="Give this ticket its own worktree of this repo"
+            icon="AllIcons.General.Add"/>
+    <action id="WorktreeWorkspaces.Reveal" class="nl.netonic.workspaces.ide.actions.SimpleActions$Reveal"
+            text="Reveal in Finder" description="Show the folder in Finder"/>
+    <action id="WorktreeWorkspaces.EditConfig" class="nl.netonic.workspaces.ide.actions.SimpleActions$EditConfig"
+            text="Edit .workspace.json" description="Repos, base branches, files to copy, branch pattern"
+            icon="AllIcons.Actions.Edit"/>
+    <action id="WorktreeWorkspaces.Remove" class="nl.netonic.workspaces.ide.actions.SimpleActions$Remove"
+            text="Remove from List" description="Forget this workspace; nothing is deleted"
+            icon="AllIcons.General.Remove"/>
+    <action id="WorktreeWorkspaces.MergeIntoTabs" class="nl.netonic.workspaces.ide.actions.SimpleActions$MergeIntoTabs"
+            text="Open Tickets as Tabs in One Window"
+            description="macOS: merge new ticket windows into tabs (Window › Merge All Project Windows)"/>
+
+    <action id="WorktreeWorkspaces.ToolbarWidget" class="nl.netonic.workspaces.ide.actions.TicketSwitcherWidgetAction"
+            text="Ticket Switcher" description="Switch ticket">
+      <add-to-group group-id="MainToolbarLeft" anchor="after" relative-to-action="main.toolbar.Project"/>
+    </action>
+
+    <group id="WorktreeWorkspaces.Options" text="Options" popup="true" icon="AllIcons.General.GearPlain">
+      <reference ref="WorktreeWorkspaces.MergeIntoTabs"/>
+      <reference ref="WorktreeWorkspaces.EditConfig"/>
+      <reference ref="WorktreeWorkspaces.AddExistingWorkspace"/>
+    </group>
+
+    <group id="WorktreeWorkspaces.Toolbar">
+      <reference ref="WorktreeWorkspaces.NewTicket"/>
+      <reference ref="WorktreeWorkspaces.NewWorkspace"/>
+      <reference ref="WorktreeWorkspaces.AddRepo"/>
+      <reference ref="WorktreeWorkspaces.Refresh"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.FinishTicket"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.Options"/>
+    </group>
+
+    <group id="WorktreeWorkspaces.TreePopup">
+      <reference ref="WorktreeWorkspaces.OpenSelected"/>
+      <reference ref="WorktreeWorkspaces.AddWorktreeToTicket"/>
+      <reference ref="WorktreeWorkspaces.NewTicket"/>
+      <reference ref="WorktreeWorkspaces.FinishTicket"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.Reveal"/>
+      <reference ref="WorktreeWorkspaces.EditConfig"/>
+      <reference ref="WorktreeWorkspaces.AddRepo"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.Refresh"/>
+      <reference ref="WorktreeWorkspaces.Remove"/>
+    </group>
+
+    <group id="WorktreeWorkspaces.Menu" text="Workspaces" popup="true">
+      <reference ref="WorktreeWorkspaces.SwitchTicket"/>
+      <reference ref="WorktreeWorkspaces.NewTicket"/>
+      <reference ref="WorktreeWorkspaces.FinishTicket"/>
+      <separator/>
+      <reference ref="WorktreeWorkspaces.NewWorkspace"/>
+      <reference ref="WorktreeWorkspaces.AddRepo"/>
+      <reference ref="WorktreeWorkspaces.AddExistingWorkspace"/>
+      <add-to-group group-id="ToolsMenu" anchor="first"/>
+    </group>
+  </actions>
+</idea-plugin>
