@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Runs right after Get from VCS clones a repo, before PhpStorm opens it: offers to move the clone into a new or
@@ -40,10 +41,12 @@ public final class CloneListener implements CheckoutListener {
     String repo = dialog.repoName();
     if (create) WorkspaceSettings.getInstance().setLastParentFolder(parent);
 
+    AtomicReference<Path> current = new AtomicReference<>(clone); // moved aside if the workspace takes its name
     Background.run(reportTo, "Moving " + clone.getFileName() + " into a workspace", (ops, log) -> {
       try {
         Workspace ws;
         if (create) {
+          current.set(ops.moveAsideForWorkspace(parent, name, clone, log));
           ws = ops.createWorkspace(parent, name);
           ws.getConfig().setBranchPattern(WorkspaceSettings.getInstance().defaultBranchPattern());
           ws.saveConfig();
@@ -51,19 +54,19 @@ public final class CloneListener implements CheckoutListener {
         } else {
           ws = Workspace.load(existing.getRoot());
         }
-        ops.adoptRepo(ws, repo, clone, log);
+        ops.adoptRepo(ws, repo, current.get(), log);
         return Workspace.load(ws.getRoot());
       } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
         throw e;
       } catch (Exception e) {
         // the clone stays where it is and opens as usual
-        log.warn("Could not move " + clone.getFileName() + " into a workspace: " + e.getMessage()
+        log.warn("Could not move " + current.get().getFileName() + " into a workspace: " + e.getMessage()
             + ". It opens as a normal project.");
         return null;
       }
     }, ws -> {
       if (ws != null) Tickets.open(ws.ticket(Workspace.MAIN));
-      else ProjectUtil.openOrImport(clone, null, true);
+      else ProjectUtil.openOrImport(current.get(), null, true);
     });
     return true; // opening is ours now
   }

@@ -3,6 +3,7 @@ package nl.netonic.workspaces.core;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +27,7 @@ public final class CoreTests {
     test("links next to the workspace", CoreTests::links);
     test("options: links off, default copy list; clone name suggestions", CoreTests::optionsAndCloneNames);
     test("delete never follows symlinks", CoreTests::deleteKeepsLinkTargets);
+    test("workspace named like the checkout it adopts", CoreTests::workspaceNamedLikeCheckout);
 
     System.out.println();
     System.out.println(passed + " passed, " + failed.size() + " failed");
@@ -349,6 +351,34 @@ public final class CoreTests {
       // ok
     }
     check(Files.isDirectory(otherClone.resolve(".git")), "other workspace's clone untouched");
+  }
+
+  static void workspaceNamedLikeCheckout() throws Exception {
+    Path tmp = Files.createTempDirectory("samename");
+    GitRunner git = GitRunner.fromSystem();
+    WorkspaceOps ops = new WorkspaceOps(git);
+    Path checkout = tmp.resolve("netcaly");
+    git.run(tmp, "init", "-q", checkout.toString()).orThrow("init");
+    Files.writeString(checkout.resolve("index.php"), "<?php\n");
+    Path other = tmp.resolve("other");
+    git.run(tmp, "init", "-q", other.toString()).orThrow("init");
+
+    eq(other, ops.moveAsideForWorkspace(tmp, "netcaly", other, WorkspaceOps.Log.NONE), "other folder left alone");
+    Path link = tmp.resolve("link");
+    Files.createSymbolicLink(link, checkout);
+    eq(checkout, ops.moveAsideForWorkspace(tmp, "link", checkout, WorkspaceOps.Log.NONE), "link at the root: not moved");
+
+    // macOS: "Netcaly" is the same folder as "netcaly"; Linux: a different, free name
+    boolean caseInsensitive = Files.exists(tmp.resolve("NETCALY"));
+    String name = caseInsensitive ? "Netcaly" : "netcaly";
+    Path aside = ops.moveAsideForWorkspace(tmp, name, checkout, WorkspaceOps.Log.NONE);
+    check(!aside.equals(checkout) && Files.isRegularFile(aside.resolve("index.php")), "checkout moved aside");
+    check(!Files.exists(checkout), "name is free");
+    Workspace ws = ops.createWorkspace(tmp, name);
+    ops.adoptRepo(ws, "frontend", aside, WorkspaceOps.Log.NONE);
+    check(Files.isRegularFile(ws.mainDir().resolve("frontend/index.php")), "checkout in main/frontend");
+    check(!Files.exists(aside, LinkOption.NOFOLLOW_LINKS), "nothing left aside");
+    eq(name, tmp.toRealPath().resolve(name).toRealPath().getFileName().toString(), "workspace folder has the new name");
   }
 
   static void slashKeysAndBases() throws Exception {

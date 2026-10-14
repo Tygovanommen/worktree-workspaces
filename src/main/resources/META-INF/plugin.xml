@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>nl.netonic.worktree-workspaces</id>
   <name>Worktree Workspaces</name>
-  <version>0.2.0</version>
+  <version>0.2.1</version>
   <vendor url="https://netonic.nl">Netonic</vendor>
   <idea-version since-build="262"/>
 
@@ -21,6 +21,12 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <p>0.2.1</p>
+    <ul>
+      <li>New Workspace / Get from VCS: a workspace may have the same name as the checkout it adopts
+          (<code>~/PhpstormProjects/klant-x</code> becomes workspace <code>klant-x</code>); the checkout is
+          moved aside first, then into <code>main/</code>.</li>
+    </ul>
     <p>0.2.0</p>
     <ul>
       <li>Links next to the workspace per repo (<code>klant-x-backend</code>, <code>klant-x-login-42-backend</code>)

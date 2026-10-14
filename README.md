@@ -52,7 +52,8 @@ Requires PhpStorm 2026.2 or newer.
 ## Quick start
 
 1. **Tools › Workspaces › New Workspace…** Give it a name (`klant-x`) and add your repos, either as a git URL or as
-   an existing checkout (moved into `klant-x/main/`). `main` opens as the first tab.
+   an existing checkout (moved into `klant-x/main/`; a checkout may have the workspace's own name, e.g. turn
+   `~/PhpstormProjects/klant-x` into workspace `klant-x`). `main` opens as the first tab.
 2. **New Ticket…** (toolbar switcher or the panel's **+**). Type `LOGIN-42` and tick the repos it touches. A tab opens
    with fresh worktrees on `feature/LOGIN-42`. Type `LOGIN-42/login-form` for `feature/LOGIN-42/login-form`.
 3. Work, commit, push. When it's merged: right-click the ticket › **Finish Ticket…**

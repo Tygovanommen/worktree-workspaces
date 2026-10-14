@@ -6,7 +6,7 @@ Claude sessions: `docs/PERFORMANCE.md`.
 
 ## Status (14 Oct 2026)
 
-- Version 0.1.0, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
+- Version 0.2.1, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
   Distributed via GitHub Releases + `updatePlugins.xml` (custom plugin repository), not the Marketplace.
 - Verified: compiles against PhpStorm 2026.2.3 (build 262.10968.76) jars; `CoreTests` pass on real git repos;
   `tools/api-check.sh` reports no internal / experimental / deprecated API use and no missing members; every

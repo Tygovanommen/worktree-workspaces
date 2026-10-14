@@ -14,6 +14,7 @@ import nl.netonic.workspaces.ide.ui.RepoSourcesPanel;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -47,13 +48,18 @@ public final class NewWorkspaceAction extends WsAction {
         if (!ProjectManager.getInstance().closeAndDispose(p)) return; // closing was cancelled: move nothing
       }
       Background.run(reportTo, "Creating workspace " + name, (ops, log) -> {
+        List<RepoSourcesPanel.RepoSource> moved = new ArrayList<>();
+        for (RepoSourcesPanel.RepoSource s : sources) {
+          moved.add(s.existing() == null ? s
+              : new RepoSourcesPanel.RepoSource(s.name(), ops.moveAsideForWorkspace(parent, name, s.existing(), log), null));
+        }
         Workspace ws = ops.createWorkspace(parent, name);
         if (!pattern.isEmpty()) {
           ws.getConfig().setBranchPattern(pattern);
           ws.saveConfig();
         }
         WorkspaceSettings.getInstance().addWorkspace(ws.getRoot());
-        AddRepoAction.addAll(ops, ws, sources, log);
+        AddRepoAction.addAll(ops, ws, moved, log);
         return Workspace.load(ws.getRoot());
       }, ws -> Tickets.open(ws.ticket(Workspace.MAIN)));
     });

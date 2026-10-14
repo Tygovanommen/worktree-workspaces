@@ -12,6 +12,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import nl.netonic.workspaces.core.Workspace;
 import nl.netonic.workspaces.core.WorkspaceConfig;
+import nl.netonic.workspaces.core.WorkspaceOps;
 import nl.netonic.workspaces.ide.WorkspaceSettings;
 import org.jetbrains.annotations.Nullable;
 
@@ -106,12 +107,16 @@ public final class NewWorkspaceDialog extends DialogWrapper {
     }
     if (!Files.isDirectory(parent)) return new ValidationInfo("Folder does not exist", locationField);
     Path root = parent.resolve(name);
-    if (Files.exists(root)) return new ValidationInfo(root + " already exists", nameField);
+    // a checkout with the workspace's name is moved aside first, then into main/
+    boolean rootIsMoved = foldersToMove().stream().anyMatch(p -> WorkspaceOps.isSameFolder(root, p));
+    if (Files.exists(root) && !rootIsMoved) return new ValidationInfo(root + " already exists", nameField);
     if (!branchPattern().isEmpty() && !branchPattern().contains("{ticket}")) {
       return new ValidationInfo("The pattern must contain {ticket}", patternField);
     }
     for (Path p : foldersToMove()) {
-      if (root.startsWith(p)) return new ValidationInfo("The workspace can't be inside " + p, locationField);
+      if (root.startsWith(p) && !WorkspaceOps.isSameFolder(root, p)) {
+        return new ValidationInfo("The workspace can't be inside " + p, locationField);
+      }
     }
     return repos.validate(Set.of());
   }

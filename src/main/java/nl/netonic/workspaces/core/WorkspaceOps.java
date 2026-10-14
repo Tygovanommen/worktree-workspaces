@@ -2,6 +2,7 @@ package nl.netonic.workspaces.core;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -71,6 +72,34 @@ public final class WorkspaceOps {
     return new Workspace(root, cfg);
   }
 
+  /**
+   * The workspace folder may be a checkout that is about to be adopted: workspace "netcaly" made from
+   * ~/PhpstormProjects/netcaly (on macOS also "Netcaly"). Renames that checkout aside so {@link #createWorkspace}
+   * can make the folder, and returns where it is now; any other folder is returned as-is.
+   */
+  public Path moveAsideForWorkspace(Path parent, String name, Path checkout, Log log) throws IOException {
+    Path source = checkout.toAbsolutePath().normalize();
+    if (!isSameFolder(parent.resolve(name), source)) return checkout;
+    checkAdoptable(source); // fail before moving anything
+    Path aside = source.resolveSibling(source.getFileName() + ".moving");
+    for (int i = 2; Files.exists(aside, LinkOption.NOFOLLOW_LINKS); i++) {
+      aside = source.resolveSibling(source.getFileName() + ".moving-" + i);
+    }
+    log.step("Moving " + source.getFileName() + " aside to make room for the workspace");
+    Files.move(source, aside);
+    return aside;
+  }
+
+  /** Both are the same real folder (also when only the case differs on macOS), neither of them a link. */
+  public static boolean isSameFolder(Path a, Path b) {
+    if (Files.isSymbolicLink(a) || Files.isSymbolicLink(b) || !Files.isDirectory(a) || !Files.isDirectory(b)) return false;
+    try {
+      return Files.isSameFile(a, b);
+    } catch (IOException e) {
+      return false;
+    }
+  }
+
   /** Clones {@code url} into main/&lt;repoName&gt; and registers it. */
   public void addRepoByClone(Workspace ws, String repoName, String url, Log log) throws IOException, GitException {
     Path target = checkNewRepoTarget(ws, repoName);
@@ -87,16 +116,7 @@ public final class WorkspaceOps {
    */
   public void adoptRepo(Workspace ws, String repoName, Path existing, Log log) throws IOException, GitException {
     Path source = existing.toAbsolutePath().normalize();
-    if (Files.isSymbolicLink(source)) throw new IOException(source + " is a link; adopt the folder it points to");
-    if (!Ticket.isGitDir(source)) throw new IOException(source + " is not a git checkout");
-    if (Files.isRegularFile(source.resolve(".git"))) {
-      throw new IOException(source + " is itself a worktree; adopt the main clone instead");
-    }
-    Workspace owner = Workspace.findContaining(source);
-    if (owner != null) {
-      // moving it would break that workspace's worktrees (and its main/ must never move)
-      throw new IOException(source + " belongs to workspace " + owner.getName() + "; clone it by URL instead");
-    }
+    checkAdoptable(source);
     Path target = checkNewRepoTarget(ws, repoName);
     if (target.startsWith(source)) throw new IOException("Can't move a folder into itself");
     log.step("Moving " + source.getFileName() + " to " + ws.getRoot().relativize(target));
@@ -108,6 +128,19 @@ public final class WorkspaceOps {
     registerRepo(ws, repoName, target, origin.ok() ? origin.out() : null);
     // usually lands on the old path (klant-x-backend), so tools that knew it keep working
     if (options.links()) Links.create(ws.ticket(Workspace.MAIN), repoName, log);
+  }
+
+  private static void checkAdoptable(Path source) throws IOException {
+    if (Files.isSymbolicLink(source)) throw new IOException(source + " is a link; adopt the folder it points to");
+    if (!Ticket.isGitDir(source)) throw new IOException(source + " is not a git checkout");
+    if (Files.isRegularFile(source.resolve(".git"))) {
+      throw new IOException(source + " is itself a worktree; adopt the main clone instead");
+    }
+    Workspace owner = Workspace.findContaining(source);
+    if (owner != null) {
+      // moving it would break that workspace's worktrees (and its main/ must never move)
+      throw new IOException(source + " belongs to workspace " + owner.getName() + "; clone it by URL instead");
+    }
   }
 
   private Path checkNewRepoTarget(Workspace ws, String repoName) throws IOException {
