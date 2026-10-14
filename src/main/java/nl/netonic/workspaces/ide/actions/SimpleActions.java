@@ -1,32 +1,35 @@
 package nl.netonic.workspaces.ide.actions;
 
 import com.intellij.ide.actions.RevealFileAction;
-import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.actionSystem.ToggleAction;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.core.TicketRepo;
 import nl.netonic.workspaces.core.Workspace;
+import nl.netonic.workspaces.core.WorkspaceConfig;
 import nl.netonic.workspaces.ide.ActionContext;
 import nl.netonic.workspaces.ide.Background;
 import nl.netonic.workspaces.ide.Feedback;
 import nl.netonic.workspaces.ide.IdeGit;
 import nl.netonic.workspaces.ide.ProjectRoots;
+import nl.netonic.workspaces.ide.RepoTerminals;
 import nl.netonic.workspaces.ide.Tickets;
 import nl.netonic.workspaces.ide.WorkspaceModel;
 import nl.netonic.workspaces.ide.WorkspaceSettings;
+import nl.netonic.workspaces.ide.ui.WorkspacesConfigurable;
 import nl.netonic.workspaces.core.IdeaFiles;
 import nl.netonic.workspaces.core.RepoStatus;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 /** Small actions used by the panel toolbar and context menu. */
 public final class SimpleActions {
@@ -54,6 +57,25 @@ public final class SimpleActions {
     public void actionPerformed(@NotNull AnActionEvent e) {
       Ticket t = e.getData(ActionContext.SELECTED_TICKET);
       if (t != null) Tickets.open(t);
+    }
+  }
+
+  /** A terminal tab in the selected repo's folder (in the current project's Terminal window). */
+  public static final class OpenRepoTerminal extends WsAction {
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      TicketRepo r = e.getData(ActionContext.SELECTED_REPO);
+      e.getPresentation().setEnabledAndVisible(e.getProject() != null && r != null
+          && r.kind() != TicketRepo.Kind.MISSING);
+    }
+
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      TicketRepo r = e.getData(ActionContext.SELECTED_REPO);
+      Project project = e.getProject();
+      if (r == null || project == null) return;
+      List<RepoTerminals.RepoDir> one = List.of(new RepoTerminals.RepoDir(r.name(), r.dir()));
+      ApplicationManager.getApplication().executeOnPooledThread(() -> RepoTerminals.open(project, one, false));
     }
   }
 
@@ -149,14 +171,29 @@ public final class SimpleActions {
       });
     }
 
-    /** The branch the ticket's other worktrees are on, else the pattern. */
+    /** The branch the ticket's other worktrees are on, else the one saved in .workspace.json, else the pattern. */
     private static String ticketBranch(Ticket t) {
       for (TicketRepo other : t.repos()) {
         if (other.kind() != TicketRepo.Kind.WORKTREE) continue;
         RepoStatus st = RepoStatus.read(IdeGit.runner(), other.dir());
         if (st.branch() != null && !st.branch().startsWith("(")) return st.branch();
       }
-      return t.getWorkspace().getConfig().branchFor(t.getName());
+      WorkspaceConfig cfg = t.getWorkspace().getConfig();
+      try {
+        // the cached workspace may predate this ticket
+        cfg = WorkspaceConfig.load(t.getWorkspace().configFile());
+      } catch (IOException ignored) {
+        // use the cached one
+      }
+      return cfg.ticketBranch(t.getName());
+    }
+  }
+
+  /** Settings › Tools › Worktree Workspaces. */
+  public static final class OpenSettings extends WsAction {
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      ShowSettingsUtil.getInstance().showSettingsDialog(e.getProject(), WorkspacesConfigurable.class);
     }
   }
 
@@ -173,30 +210,6 @@ public final class SimpleActions {
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
       Feedback.openRepo();
-    }
-  }
-
-  /** macOS: merge new ticket windows into tabs of one window. */
-  public static final class MergeIntoTabs extends ToggleAction implements DumbAware {
-    @Override
-    public @NotNull ActionUpdateThread getActionUpdateThread() {
-      return ActionUpdateThread.BGT;
-    }
-
-    @Override
-    public void update(@NotNull AnActionEvent e) {
-      super.update(e);
-      e.getPresentation().setVisible(SystemInfo.isMac);
-    }
-
-    @Override
-    public boolean isSelected(@NotNull AnActionEvent e) {
-      return WorkspaceSettings.getInstance().isMergeWindowsIntoTabs();
-    }
-
-    @Override
-    public void setSelected(@NotNull AnActionEvent e, boolean state) {
-      WorkspaceSettings.getInstance().setMergeWindowsIntoTabs(state);
     }
   }
 }

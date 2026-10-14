@@ -8,7 +8,10 @@ import nl.netonic.workspaces.core.Ticket;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/** When a ticket project opens: remember its workspace and make sure attached repos + Git roots are set. */
+/**
+ * When a ticket project opens: remember its workspace, make sure attached repos + Git roots are set, and (the first
+ * time, if enabled) open a terminal per repo.
+ */
 public final class TicketStartupActivity implements ProjectActivity {
   @Override
   public @Nullable Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
@@ -17,6 +20,7 @@ public final class TicketStartupActivity implements ProjectActivity {
     if (ticket != null) {
       WorkspaceSettings.getInstance().addWorkspace(ticket.getWorkspace().getRoot());
       ProjectRoots.syncLater(project, ticket);
+      RepoTerminals.openOnFirstOpen(project, ticket);
     }
     WorkspaceModel.getInstance().refreshIfStale(2_000);
     WorkspaceModel.getInstance().notifyChanged();

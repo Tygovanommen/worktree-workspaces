@@ -26,7 +26,7 @@ of each repo it touches, and opens it as one PhpStorm tab. Switching tickets is 
 - **Ready to run in seconds.** `.env`, `auth.json`, `vendor/` and `node_modules/` are copied from your main checkout.
   On macOS that's an APFS clone: instant, and no extra disk space.
 - **Picks up where a colleague left off.** If `feature/LOGIN-42` already exists locally or on `origin`, the worktree
-  uses it; otherwise it branches from the up-to-date base branch.
+  uses it; otherwise it branches from the base branch you pick, local or remote.
 - **Only the repos you need.** A backend-only ticket gets a backend worktree; the frontend is attached read-write from
   `main/` and can get its own worktree later with one click.
 - **Everything at a glance.** A *Workspaces* panel lists every ticket with branch, changed files and unpushed commits,
@@ -54,7 +54,7 @@ Requires PhpStorm 2026.2 or newer.
 1. **Tools › Workspaces › New Workspace…** Give it a name (`klant-x`) and add your repos, either as a git URL or as
    an existing checkout (moved into `klant-x/main/`). `main` opens as the first tab.
 2. **New Ticket…** (toolbar switcher or the panel's **+**). Type `LOGIN-42` and tick the repos it touches. A tab opens
-   with fresh worktrees on `feature/LOGIN-42`.
+   with fresh worktrees on `feature/LOGIN-42`. Type `LOGIN-42/login-form` for `feature/LOGIN-42/login-form`.
 3. Work, commit, push. When it's merged: right-click the ticket › **Finish Ticket…**
 
 **macOS tip:** set *System Settings › Desktop & Dock › Prefer tabs when opening documents* to **Always** so ticket
@@ -76,6 +76,12 @@ windows stay tabs after a restart. The first time a ticket opens, PhpStorm may a
 
 ![Each ticket is one folder and one tab, with a worktree per repo it touches](docs/plan/concept.png)
 
+Next to the workspace the plugin keeps a link per repo, so tools that only look one folder deep (Herd, Valet, ...)
+still find everything: `klant-x-backend → klant-x/main/backend` and `klant-x-login-42-backend →
+klant-x/LOGIN-42/backend`, so Herd serves `klant-x-login-42-backend.test`. Adopting a checkout leaves such a link at its
+old path. It all happens automatically: links are made with tickets and repos, removed when a ticket is finished (or
+its folder is deleted), and never replace anything that's already there.
+
 Every repo keeps a single `.git` in `main/`, and ticket folders hold worktrees of it. Shared `.idea` settings (PHP
 interpreter, code style, run configurations, data sources) are copied from `main/.idea`. `workspace.xml` is never
 copied, so tickets stay separate projects.
@@ -88,12 +94,16 @@ copied, so tickets stay separate projects.
 | Toolbar, next to the project name | `klant-x / LOGIN-42 ▾`: a searchable list of every ticket, plus New Ticket and New Workspace. |
 | Tools › Workspaces, or Find Action | Switch Ticket, New Ticket, Finish Ticket, New Workspace, Add Repo. Give **Switch Ticket** a shortcut in Settings › Keymap. |
 
-**New ticket.** The branch comes from the workspace's pattern (`feature/{ticket}`) and can be edited. Per repo the
-plugin fetches the base branch, then:
+**New ticket.** The branch comes from the workspace's pattern (`feature/{ticket}`) and can be edited. The ticket
+may contain `/`: `LOGIN-42/login-form` gives branch `feature/LOGIN-42/login-form`, folder `LOGIN-42-login-form/` and
+tab `klant-x · LOGIN-42-login-form`.
+
+Per repo, *Branch from* lists the same local and remote branches as PhpStorm's Git branches popup, with the local
+base branch preselected (else `origin/<base>`). The plugin fetches the base branch, then:
 
 - branch exists locally → worktree on it
 - branch exists on `origin` → worktree tracking it
-- otherwise → new branch from `origin/<base>`
+- otherwise → new branch from the branch you picked: a local branch as it is, a remote one freshly fetched
 
 Run `composer install` / `npm ci` only when the lock files differ from `main`.
 
@@ -102,6 +112,27 @@ Run `composer install` / `npm ci` only when the lock files differ from `main`.
 **Finish ticket.** Lists uncommitted changes and commits that are on no remote, closes the tab, runs
 `git worktree remove` per repo and deletes the folder. A folder that still holds other files (notes, scripts) is
 kept.
+
+**Terminals.** When a ticket (or main) opens for the first time, each repo gets its own terminal tab in its own
+folder (`backend`, `frontend`), so `composer install`, `npm install` and git work like in a single-repo project.
+Right-click a repo in the panel › *Open in Terminal* for another one.
+
+**Cloning.** After *Get from VCS* clones a repo, the plugin offers to put it in a new or existing workspace: the clone
+moves to `<workspace>/main/<repo>` and main opens. *Open as Usual* leaves it alone.
+
+## Settings
+
+*Settings › Tools › Worktree Workspaces* (or the panel's ⚙ › *Settings…*):
+
+| Setting | Default |
+| --- | --- |
+| Open tickets as tabs in one window (macOS) | on |
+| Open a terminal per repo when a ticket or main opens | on |
+| Offer to put a cloned repo in a workspace (after *Get from VCS*) | on |
+| Link every repo next to its workspace (for Herd and similar tools) | on; switching it off removes the links |
+| New workspaces: location, branch pattern, files to copy | last used folder, `feature/{ticket}`, `.env, .env.local, auth.json, vendor, node_modules` |
+| Finish Ticket: delete fully merged branches | on |
+| Refresh git status when PhpStorm gets focus | on |
 
 ## Configuration: `.workspace.json`
 
@@ -113,11 +144,16 @@ kept.
     "backend":  { "url": "git@github.com:org/klant-x-backend.git", "baseBranch": "develop",
                   "copy": [".env", ".env.local", "auth.json", "vendor", "node_modules"] },
     "frontend": { "baseBranch": "main", "copy": [".env", "node_modules"] }
+  },
+  "tickets": {
+    "LOGIN-42-login-form": { "branch": "feature/LOGIN-42/login-form" }
   }
 }
 ```
 
-Open it from the panel (⚙ › *Edit .workspace.json*). `baseBranch` is detected from the remote when you add a repo.
+Open it from the panel (⚙ › *Edit .workspace.json*). `baseBranch` is detected from the remote when you add a repo;
+a plain name means the local branch if there is one, else `origin`'s. `tickets` is kept by the plugin: the branch
+each ticket was created on (used when a repo is added to it later), removed again on *Finish Ticket*.
 Commit the file to a shared place and teammates can register it with *Add Existing Workspace…*.
 
 ## Running AI agents in parallel

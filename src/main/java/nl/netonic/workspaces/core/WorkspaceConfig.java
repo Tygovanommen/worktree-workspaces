@@ -21,6 +21,9 @@ import java.util.Map;
  *   "repos": {
  *     "backend":  { "baseBranch": "develop", "copy": [".env", "auth.json", "vendor"] },
  *     "frontend": { "baseBranch": "main",    "copy": [".env", "node_modules"] }
+ *   },
+ *   "tickets": {
+ *     "LOGIN-42-login-form": { "branch": "feature/LOGIN-42/login-form" }
  *   }
  * }
  * </pre>
@@ -35,9 +38,11 @@ public final class WorkspaceConfig {
   private String name;
   private String branchPattern = DEFAULT_BRANCH_PATTERN;
   private final LinkedHashMap<String, RepoConfig> repos = new LinkedHashMap<>();
+  /** Per ticket folder: the branch it was created on, with any fields a newer version added. */
+  private final LinkedHashMap<String, Map<String, Object>> tickets = new LinkedHashMap<>();
   /** Fields this version doesn't know (written by a newer one): kept as-is on save. */
   private final LinkedHashMap<String, Object> extra = new LinkedHashMap<>();
-  private static final List<String> KNOWN = List.of("name", "branchPattern", "repos");
+  private static final List<String> KNOWN = List.of("name", "branchPattern", "repos", "tickets");
   private static final List<String> KNOWN_REPO = List.of("url", "baseBranch", "copy");
 
   public WorkspaceConfig(String name) {
@@ -55,8 +60,29 @@ public final class WorkspaceConfig {
   /** Repos in the order they were added (backend before frontend, etc.). */
   public Map<String, RepoConfig> getRepos() { return repos; }
 
-  public String branchFor(String ticket) {
-    return branchPattern.replace("{ticket}", ticket);
+  /** The branch for a new ticket; {@code key} may contain '/' (e.g. LOGIN-42/login-form). */
+  public String branchFor(String key) {
+    return branchPattern.replace("{ticket}", key);
+  }
+
+  /** The branch ticket folder {@code ticket} was created on, else the one the pattern gives. */
+  public String ticketBranch(String ticket) {
+    Map<String, Object> t = tickets.get(ticket);
+    String branch = t == null ? null : str(t.get("branch"), null);
+    return branch != null ? branch : branchFor(ticket);
+  }
+
+  public void setTicketBranch(String ticket, String branch) {
+    if (branch == null || branch.isBlank()) {
+      Map<String, Object> t = tickets.get(ticket);
+      if (t != null) t.remove("branch");
+    } else {
+      tickets.computeIfAbsent(ticket, k -> new LinkedHashMap<>()).put("branch", branch.trim());
+    }
+  }
+
+  public void removeTicket(String ticket) {
+    tickets.remove(ticket);
   }
 
   // ------------------------------------------------------------------ JSON
@@ -94,6 +120,14 @@ public final class WorkspaceConfig {
         cfg.repos.put(String.valueOf(e.getKey()), rc);
       }
     }
+    if (root.get("tickets") instanceof Map<?, ?> ts) {
+      for (Map.Entry<?, ?> e : ts.entrySet()) {
+        if (!Workspace.isValidName(String.valueOf(e.getKey())) || !(e.getValue() instanceof Map<?, ?> t)) continue;
+        Map<String, Object> copy = new LinkedHashMap<>();
+        t.forEach((k, v) -> copy.put(String.valueOf(k), v));
+        cfg.tickets.put(String.valueOf(e.getKey()), copy);
+      }
+    }
     return cfg;
   }
 
@@ -112,6 +146,11 @@ public final class WorkspaceConfig {
       rs.put(e.getKey(), r);
     }
     root.put("repos", rs);
+    if (!tickets.isEmpty()) {
+      Map<String, Object> ts = new LinkedHashMap<>();
+      tickets.forEach((k, v) -> ts.put(k, new LinkedHashMap<>(v)));
+      root.put("tickets", ts);
+    }
     root.putAll(extra);
     // write next to it and move over, so a crash never leaves a truncated config
     Path tmp = file.resolveSibling(file.getFileName() + ".tmp");

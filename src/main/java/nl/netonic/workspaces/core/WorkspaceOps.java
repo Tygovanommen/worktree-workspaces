@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /** All file-system and git operations of the plugin. No IDE dependencies, so it is unit-testable. */
@@ -25,13 +26,30 @@ public final class WorkspaceOps {
     };
   }
 
-  /** What to do for one repo when creating a ticket. */
+  /**
+   * What to do for one repo when creating a ticket. {@code baseBranch} is a full ref (refs/heads/develop,
+   * refs/remotes/origin/develop), a plain name (local branch first, then origin's), or empty for the default.
+   */
   public record RepoChoice(String repo, boolean include, String baseBranch) {}
 
+  /** Branches of a repo as full refs, sorted; remote ones without {@code <remote>/HEAD}. */
+  public record Branches(List<String> local, List<String> remote) {}
+
+  /** Preferences from the IDE: links next to the workspace on/off, files copied into new worktrees. */
+  public record Options(boolean links, List<String> defaultCopy) {
+    public static final Options DEFAULT = new Options(true, WorkspaceConfig.DEFAULT_COPY);
+  }
+
   private final GitRunner git;
+  private final Options options;
 
   public WorkspaceOps(GitRunner git) {
+    this(git, Options.DEFAULT);
+  }
+
+  public WorkspaceOps(GitRunner git, Options options) {
     this.git = git;
+    this.options = options;
   }
 
   public GitRunner git() {
@@ -60,6 +78,7 @@ public final class WorkspaceOps {
     Files.createDirectories(ws.mainDir());
     git.run(ws.mainDir(), CLONE_TIMEOUT, "clone", "--", url, repoName).orThrow("git clone failed");
     registerRepo(ws, repoName, target, url);
+    if (options.links()) Links.create(ws.ticket(Workspace.MAIN), repoName, log);
   }
 
   /**
@@ -68,6 +87,7 @@ public final class WorkspaceOps {
    */
   public void adoptRepo(Workspace ws, String repoName, Path existing, Log log) throws IOException, GitException {
     Path source = existing.toAbsolutePath().normalize();
+    if (Files.isSymbolicLink(source)) throw new IOException(source + " is a link; adopt the folder it points to");
     if (!Ticket.isGitDir(source)) throw new IOException(source + " is not a git checkout");
     if (Files.isRegularFile(source.resolve(".git"))) {
       throw new IOException(source + " is itself a worktree; adopt the main clone instead");
@@ -86,6 +106,8 @@ public final class WorkspaceOps {
     if (!repair.ok()) log.warn("git worktree repair: " + repair.message());
     GitRunner.Result origin = git.run(target, "remote", "get-url", "origin");
     registerRepo(ws, repoName, target, origin.ok() ? origin.out() : null);
+    // usually lands on the old path (klant-x-backend), so tools that knew it keep working
+    if (options.links()) Links.create(ws.ticket(Workspace.MAIN), repoName, log);
   }
 
   private Path checkNewRepoTarget(Workspace ws, String repoName) throws IOException {
@@ -97,12 +119,26 @@ public final class WorkspaceOps {
 
   private static final Object CONFIG_LOCK = new Object();
 
+  /** Re-reads .workspace.json, applies {@code change}, writes it, and applies it in memory too. */
+  private static void updateConfig(Workspace ws, Consumer<WorkspaceConfig> change) throws IOException {
+    synchronized (CONFIG_LOCK) {
+      WorkspaceConfig onDisk = Files.isRegularFile(ws.configFile()) ? WorkspaceConfig.load(ws.configFile()) : ws.getConfig();
+      change.accept(onDisk);
+      onDisk.save(ws.configFile());
+      if (onDisk != ws.getConfig()) change.accept(ws.getConfig());
+    }
+  }
+
   /** Re-reads .workspace.json right before writing, so edits made meanwhile are kept. */
   private void registerRepo(Workspace ws, String repoName, Path checkout, String url) throws IOException {
     String base = detectDefaultBranch(checkout);
     synchronized (CONFIG_LOCK) {
       WorkspaceConfig onDisk = Files.isRegularFile(ws.configFile()) ? WorkspaceConfig.load(ws.configFile()) : ws.getConfig();
-      WorkspaceConfig.RepoConfig rc = onDisk.getRepos().computeIfAbsent(repoName, k -> new WorkspaceConfig.RepoConfig());
+      WorkspaceConfig.RepoConfig rc = onDisk.getRepos().computeIfAbsent(repoName, k -> {
+        WorkspaceConfig.RepoConfig fresh = new WorkspaceConfig.RepoConfig();
+        fresh.setCopy(options.defaultCopy());
+        return fresh;
+      });
       rc.setUrl(url);
       if (rc.getBaseBranch() == null) rc.setBaseBranch(base);
       onDisk.save(ws.configFile());
@@ -176,6 +212,11 @@ public final class WorkspaceOps {
       throw new GitException("No worktree could be created.\n" + String.join("\n", failures));
     }
     IdeaFiles.prepare(ticket);
+    try {
+      updateConfig(ws, cfg -> cfg.setTicketBranch(ticketName, branch.trim()));
+    } catch (IOException e) {
+      log.warn("Could not save the branch in " + WorkspaceConfig.FILE_NAME + ": " + e.getMessage());
+    }
     return ticket;
   }
 
@@ -188,13 +229,32 @@ public final class WorkspaceOps {
     if (Files.exists(target)) throw new GitException(ws.getRoot().relativize(target) + " already exists");
 
     String base = baseBranch == null || baseBranch.isBlank() ? configuredBase(ws, repo, mainRepo) : baseBranch.trim();
+    String baseRemote = null;
+    boolean explicit = true;
+    if (base.startsWith("refs/heads/")) {
+      base = base.substring("refs/heads/".length());
+    } else if (base.startsWith("refs/remotes/")) {
+      String rest = base.substring("refs/remotes/".length());
+      int slash = rest.indexOf('/');
+      baseRemote = slash > 0 ? rest.substring(0, slash) : "";
+      base = slash > 0 ? rest.substring(slash + 1) : "";
+      if (!remotes(mainRepo).contains(baseRemote)) throw new GitException("Unknown remote in " + baseBranch);
+    } else {
+      explicit = false;
+    }
     checkBranchName(mainRepo, branch);
     checkBranchName(mainRepo, base);
 
-    log.step(repo + ": fetching origin/" + base);
+    // always fetch the base, also for a local pick (that one is still used as it is)
+    String fetchFrom = baseRemote != null ? baseRemote : hasRemote(mainRepo) ? "origin" : null;
+    if (fetchFrom != null) {
+      log.step(repo + ": fetching " + fetchFrom + "/" + base);
+      GitRunner.Result fetch = git.run(mainRepo, FETCH_TIMEOUT, "fetch", fetchFrom, base);
+      if (!fetch.ok() && (baseRemote != null || !refExists(mainRepo, "refs/heads/" + base))) {
+        log.warn(repo + ": fetch failed, using the local state (" + fetch.message() + ")");
+      }
+    }
     if (hasRemote(mainRepo)) {
-      GitRunner.Result fetch = git.run(mainRepo, FETCH_TIMEOUT, "fetch", "origin", base);
-      if (!fetch.ok()) log.warn(repo + ": fetch failed, using the local state (" + fetch.message() + ")");
       // the ticket branch may already exist on the remote (pushed by a colleague); fails quietly when it doesn't
       git.run(mainRepo, FETCH_TIMEOUT, "fetch", "origin", "+refs/heads/" + branch + ":refs/remotes/origin/" + branch);
     }
@@ -207,10 +267,8 @@ public final class WorkspaceOps {
       add = git.run(mainRepo, CLONE_TIMEOUT, "worktree", "add", "--track", "-b", branch, target.toString(),
           "origin/" + branch);
     } else {
-      String start;
-      if (refExists(mainRepo, "refs/remotes/origin/" + base)) start = "origin/" + base;
-      else if (refExists(mainRepo, "refs/heads/" + base)) start = base;
-      else {
+      String start = startPoint(mainRepo, base, baseRemote, explicit);
+      if (start == null) {
         log.warn(repo + ": base branch '" + base + "' not found, branching from main/" + repo + "'s HEAD");
         start = "HEAD";
       }
@@ -235,6 +293,7 @@ public final class WorkspaceOps {
         log.warn(repo + ": could not copy " + entry + " (" + e.getMessage() + ")");
       }
     }
+    if (options.links()) Links.create(ticket, repo, log);
   }
 
   /** Rejects names git wouldn't accept as a branch, including ones starting with '-' (read as an option). */
@@ -244,6 +303,41 @@ public final class WorkspaceOps {
     }
   }
 
+  /**
+   * The ref to branch from. A picked branch must exist; a plain name is the local branch, else origin's,
+   * else null (the caller falls back to HEAD).
+   */
+  private String startPoint(Path repo, String base, String remote, boolean explicit) throws GitException {
+    if (remote != null) {
+      if (refExists(repo, "refs/remotes/" + remote + "/" + base)) return "refs/remotes/" + remote + "/" + base;
+      throw new GitException("Branch " + remote + "/" + base + " not found");
+    }
+    if (refExists(repo, "refs/heads/" + base)) return "refs/heads/" + base;
+    if (explicit) throw new GitException("Branch " + base + " not found");
+    if (refExists(repo, "refs/remotes/origin/" + base)) return "refs/remotes/origin/" + base;
+    return null;
+  }
+
+  /** Local and remote-tracking branches, the same set PhpStorm's Git branches popup shows. */
+  public Branches listBranches(Path repo) throws GitException {
+    GitRunner.Result r = git.run(repo, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes");
+    r.orThrow("git for-each-ref failed");
+    List<String> local = new ArrayList<>();
+    List<String> remote = new ArrayList<>();
+    for (String ref : r.out().split("\n")) {
+      if (ref.startsWith("refs/heads/")) local.add(ref);
+      else if (ref.startsWith("refs/remotes/") && !ref.endsWith("/HEAD")) remote.add(ref);
+    }
+    local.sort(String.CASE_INSENSITIVE_ORDER);
+    remote.sort(String.CASE_INSENSITIVE_ORDER);
+    return new Branches(local, remote);
+  }
+
+  private List<String> remotes(Path repo) {
+    GitRunner.Result r = git.run(repo, "remote");
+    return r.ok() ? r.out().lines().toList() : List.of();
+  }
+
   private String configuredBase(Workspace ws, String repo, Path mainRepo) {
     WorkspaceConfig.RepoConfig rc = ws.getConfig().getRepos().get(repo);
     if (rc != null && rc.getBaseBranch() != null) return rc.getBaseBranch();
@@ -251,12 +345,26 @@ public final class WorkspaceOps {
   }
 
   private boolean hasRemote(Path repo) {
-    GitRunner.Result r = git.run(repo, "remote");
-    return r.ok() && r.out().lines().anyMatch("origin"::equals);
+    return remotes(repo).contains("origin");
   }
 
   private boolean refExists(Path repo, String ref) {
     return git.run(repo, "show-ref", "--verify", "--quiet", ref).ok();
+  }
+
+  /** Link names created and removed by {@link #syncLinks}. */
+  public record LinkChanges(List<String> created, List<String> removed) {}
+
+  /**
+   * Creates the missing links of main and every ticket, and removes links whose ticket or repo is gone.
+   * Run on every scan, so links follow the folders whatever made or removed them. With links switched off,
+   * removes all of this workspace's links instead.
+   */
+  public LinkChanges syncLinks(Workspace ws, Log log) {
+    if (!options.links()) return new LinkChanges(List.of(), Links.removeAll(ws, log));
+    List<String> created = new ArrayList<>();
+    for (Ticket t : ws.tickets()) created.addAll(Links.sync(t, log));
+    return new LinkChanges(created, Links.tidy(ws, log));
   }
 
   // ---------------------------------------------------------------- finish
@@ -355,6 +463,12 @@ public final class WorkspaceOps {
         continue;
       }
       messages.add(r.name() + ": worktree removed");
+      try {
+        String link = Links.remove(ticket, r.name());
+        if (link != null) messages.add(r.name() + ": removed link " + link);
+      } catch (IOException e) {
+        messages.add(r.name() + ": link not removed (" + e.getMessage() + ")");
+      }
       if (deleteMergedBranches && branch != null && !branch.startsWith("(") && Ticket.isGitDir(mainRepo)) {
         GitRunner.Result del = git.run(mainRepo, "branch", "-d", branch);
         messages.add(r.name() + (del.ok() ? ": deleted branch " + branch
@@ -375,6 +489,11 @@ public final class WorkspaceOps {
     }
     log.step("Removing " + ws.getRoot().relativize(dir));
     FileCloner.deleteRecursively(dir);
+    try {
+      updateConfig(ws, cfg -> cfg.removeTicket(ticket.getName()));
+    } catch (IOException e) {
+      messages.add("Could not update " + WorkspaceConfig.FILE_NAME + ": " + e.getMessage());
+    }
     return new FinishResult(true, messages);
   }
 

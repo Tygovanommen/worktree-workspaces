@@ -53,6 +53,30 @@ public final class Workspace {
     return name != null && NAME.matcher(name).matches() && !name.equals(".") && !name.equals("..");
   }
 
+  /** Ticket key as typed: valid names separated by '/', e.g. LOGIN-42 or LOGIN-42/login-form. */
+  public static boolean isValidTicketKey(String key) {
+    if (key == null || key.isEmpty()) return false;
+    for (String part : key.split("/", -1)) {
+      if (!isValidName(part)) return false;
+    }
+    return true;
+  }
+
+  /** The folder (and tab) name of a ticket key: '/' becomes '-', so LOGIN-42/login-form → LOGIN-42-login-form. */
+  public static String ticketFolderName(String key) {
+    return key.replace('/', '-');
+  }
+
+  /** Workspace and repo name suggested for a cloned folder. */
+  public record CloneNames(String workspace, String repo) {}
+
+  /** billebly-api → billebly + api (split at the last '-' or '_'); without one, both are the folder name. */
+  public static CloneNames suggestNames(String folder) {
+    int cut = Math.max(folder.lastIndexOf('-'), folder.lastIndexOf('_'));
+    if (cut <= 0 || cut == folder.length() - 1) return new CloneNames(folder, folder);
+    return new CloneNames(folder.substring(0, cut), folder.substring(cut + 1));
+  }
+
   public Path getRoot() { return root; }
   public WorkspaceConfig getConfig() { return config; }
   public String getName() { return config.getName(); }

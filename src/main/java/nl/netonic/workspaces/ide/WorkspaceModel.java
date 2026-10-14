@@ -10,10 +10,13 @@ import nl.netonic.workspaces.core.RepoStatus;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.core.TicketRepo;
 import nl.netonic.workspaces.core.Workspace;
+import nl.netonic.workspaces.core.WorkspaceOps;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -45,6 +48,8 @@ public final class WorkspaceModel {
   private volatile long lastRefresh;
   private final AtomicBoolean running = new AtomicBoolean();
   private final AtomicBoolean again = new AtomicBoolean();
+  /** Link problems already shown this session; a scan runs on every focus, so each is shown once. */
+  private static final Set<String> shownLinkWarnings = ConcurrentHashMap.newKeySet();
 
   public static WorkspaceModel getInstance() {
     return ApplicationManager.getApplication().getService(WorkspaceModel.class);
@@ -108,6 +113,7 @@ public final class WorkspaceModel {
         result.add(new WorkspaceView(root, null, e.getMessage(), List.of()));
         continue;
       }
+      syncLinks(ws);
       List<TicketView> tickets = new ArrayList<>();
       for (Ticket t : ws.tickets()) {
         List<RepoView> repos = new ArrayList<>();
@@ -120,5 +126,24 @@ public final class WorkspaceModel {
       result.add(new WorkspaceView(root, ws, null, tickets));
     }
     return List.copyOf(result);
+  }
+
+  /** Keeps the links next to the workspace in step with its folders (also for tickets made or deleted elsewhere). */
+  private static void syncLinks(Workspace ws) {
+    List<String> warnings = new ArrayList<>();
+    WorkspaceOps.Log log = new WorkspaceOps.Log() {
+      @Override public void step(String text) {}
+      @Override public void warn(String text) { warnings.add(text); }
+    };
+    try {
+      WorkspaceOps.LinkChanges changes = IdeGit.ops().syncLinks(ws, log);
+      if (!changes.created().isEmpty() || !changes.removed().isEmpty()) {
+        LOG.info(ws.getName() + ": links created " + changes.created() + ", removed " + changes.removed());
+      }
+    } catch (RuntimeException e) {
+      LOG.warn("Syncing links of " + ws.getName() + " failed", e);
+    }
+    List<String> fresh = warnings.stream().filter(shownLinkWarnings::add).toList();
+    if (!fresh.isEmpty()) Notifier.warn(null, "Folder links for " + ws.getName(), String.join("\n", fresh));
   }
 }

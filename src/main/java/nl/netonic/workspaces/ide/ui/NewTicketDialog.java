@@ -1,38 +1,56 @@
 package nl.netonic.workspaces.ide.ui;
 
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.ValidationInfo;
+import com.intellij.ui.ComboboxSpeedSearch;
 import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.SimpleListCellRenderer;
+import com.intellij.ui.TitledSeparator;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import nl.netonic.workspaces.core.GitException;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.core.TicketRepo;
 import nl.netonic.workspaces.core.Workspace;
 import nl.netonic.workspaces.core.WorkspaceConfig;
 import nl.netonic.workspaces.core.WorkspaceOps;
+import nl.netonic.workspaces.ide.IdeGit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JPanel;
+import javax.swing.ListCellRenderer;
 import javax.swing.event.DocumentEvent;
+import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Ticket key, branch (from the pattern), and which repos get a worktree. */
+/** Ticket key, branch (from the pattern), and which repos get a worktree from which branch. */
 public final class NewTicketDialog extends DialogWrapper {
-  private record RepoRow(String repo, JBCheckBox include, JBTextField base, boolean available) {}
+  /** A base to branch from: a full ref, or (until the branches are loaded) a plain name or "" for the default. */
+  private record Base(String ref, String label, boolean remote) {
+    @Override
+    public String toString() {
+      return label;
+    }
+  }
+
+  private record RepoRow(String repo, JBCheckBox include, ComboBox<Base> base, boolean available) {}
 
   private final ComboBox<Workspace> workspaceCombo;
   private final JBTextField keyField = new JBTextField(24);
@@ -42,6 +60,8 @@ public final class NewTicketDialog extends DialogWrapper {
   private final List<RepoRow> rows = new ArrayList<>();
   private boolean branchEdited;
   private boolean settingBranch;
+  /** Bumped when the repo rows are rebuilt, so branches loaded for an earlier workspace are dropped. */
+  private int rowsGeneration;
 
   public NewTicketDialog(@Nullable Project project, List<Workspace> workspaces, @Nullable Workspace preselected) {
     super(project, true);
@@ -58,7 +78,7 @@ public final class NewTicketDialog extends DialogWrapper {
     if (preselected != null) workspaceCombo.setSelectedItem(preselected);
     workspaceCombo.addActionListener(e -> workspaceChanged());
 
-    keyField.getEmptyText().setText("LOGIN-42");
+    keyField.getEmptyText().setText("LOGIN-42 or LOGIN-42/login-form");
     keyField.getDocument().addDocumentListener(new DocumentAdapter() {
       @Override
       protected void textChanged(@NotNull DocumentEvent e) {
@@ -81,8 +101,14 @@ public final class NewTicketDialog extends DialogWrapper {
     return (Workspace) workspaceCombo.getSelectedItem();
   }
 
+  /** As typed, e.g. LOGIN-42/login-form; goes into the branch pattern. */
   public String ticketKey() {
     return keyField.getText().trim();
+  }
+
+  /** The ticket's folder and tab name, e.g. LOGIN-42-login-form. */
+  public String ticketFolder() {
+    return Workspace.ticketFolderName(ticketKey());
   }
 
   public String branch() {
@@ -92,7 +118,9 @@ public final class NewTicketDialog extends DialogWrapper {
   public List<WorkspaceOps.RepoChoice> choices() {
     List<WorkspaceOps.RepoChoice> out = new ArrayList<>();
     for (RepoRow r : rows) {
-      out.add(new WorkspaceOps.RepoChoice(r.repo(), r.available() && r.include().isSelected(), r.base().getText().trim()));
+      Base base = (Base) r.base().getSelectedItem();
+      out.add(new WorkspaceOps.RepoChoice(r.repo(), r.available() && r.include().isSelected(),
+          base == null ? "" : base.ref()));
     }
     return out;
   }
@@ -100,6 +128,7 @@ public final class NewTicketDialog extends DialogWrapper {
   private void workspaceChanged() {
     rows.clear();
     reposPanel.removeAll();
+    rowsGeneration++;
     Workspace ws = workspace();
     if (ws == null) return;
     GridBagConstraints c = new GridBagConstraints();
@@ -119,10 +148,14 @@ public final class NewTicketDialog extends DialogWrapper {
     for (TicketRepo r : mainRepos) {
       boolean available = r.kind() == TicketRepo.Kind.CLONE;
       WorkspaceConfig.RepoConfig rc = ws.getConfig().getRepos().get(r.name());
+      String configured = rc != null && rc.getBaseBranch() != null ? rc.getBaseBranch() : "";
       JBCheckBox box = new JBCheckBox(available ? r.name() : r.name() + "  (not in main/)", available);
       box.setEnabled(available);
-      JBTextField base = new JBTextField(rc != null && rc.getBaseBranch() != null ? rc.getBaseBranch() : "", 14);
-      base.getEmptyText().setText("default branch");
+      // until the branches are loaded: the configured name, resolved by core (local first, then origin)
+      ComboBox<Base> base = new ComboBox<>(new Base[] {
+          new Base(configured, configured.isEmpty() ? "default branch" : configured, false)}, JBUI.scale(220));
+      base.setRenderer(new BaseRenderer());
+      ComboboxSpeedSearch.installOn(base);
       base.setEnabled(available);
       box.addItemListener(e -> base.setEnabled(box.isSelected()));
       c.gridy++;
@@ -141,6 +174,74 @@ public final class NewTicketDialog extends DialogWrapper {
     reposPanel.revalidate();
     reposPanel.repaint();
     updateBranch();
+    loadBranches(ws, List.copyOf(rows));
+  }
+
+  /** Fills each repo's dropdown off the EDT; preselects the local base branch, else origin's. */
+  private void loadBranches(Workspace ws, List<RepoRow> forRows) {
+    int generation = rowsGeneration;
+    ApplicationManager.getApplication().executeOnPooledThread(() -> {
+      WorkspaceOps ops = IdeGit.ops();
+      for (RepoRow row : forRows) {
+        if (!row.available()) continue;
+        WorkspaceOps.Branches branches;
+        try {
+          branches = IdeGit.branches(ws, row.repo());
+        } catch (GitException e) {
+          continue; // keep the configured name; core resolves it when creating
+        }
+        WorkspaceConfig.RepoConfig rc = ws.getConfig().getRepos().get(row.repo());
+        String base = rc != null && rc.getBaseBranch() != null ? rc.getBaseBranch()
+            : ops.detectDefaultBranch(ws.mainDir().resolve(row.repo()));
+        ApplicationManager.getApplication().invokeLater(() -> {
+          if (generation == rowsGeneration && !isDisposed()) fill(row.base(), branches, base);
+        }, ModalityState.any());
+      }
+    });
+  }
+
+  private static void fill(ComboBox<Base> combo, WorkspaceOps.Branches branches, String base) {
+    DefaultComboBoxModel<Base> model = new DefaultComboBoxModel<>();
+    Base selected = null;
+    Base originBase = null;
+    for (String ref : branches.local()) {
+      Base b = new Base(ref, ref.substring("refs/heads/".length()), false);
+      model.addElement(b);
+      if (ref.equals("refs/heads/" + base)) selected = b;
+    }
+    for (String ref : branches.remote()) {
+      Base b = new Base(ref, ref.substring("refs/remotes/".length()), true);
+      model.addElement(b);
+      if (ref.equals("refs/remotes/origin/" + base)) originBase = b;
+    }
+    if (model.getSize() == 0) return;
+    combo.setModel(model);
+    // no match: nothing selected, so validation asks for a pick instead of guessing
+    model.setSelectedItem(selected != null ? selected : originBase);
+  }
+
+  /** Adds a "Local" / "Remote" header above the first branch of each group in the popup. */
+  private static final class BaseRenderer implements ListCellRenderer<Base> {
+    private final ListCellRenderer<Base> label = new SimpleListCellRenderer<>() {
+      @Override
+      public void customize(@NotNull JList<? extends Base> list, Base b, int index, boolean selected, boolean hasFocus) {
+        setText(b == null ? "" : b.label());
+      }
+    };
+
+    @Override
+    public Component getListCellRendererComponent(JList<? extends Base> list, Base value, int index, boolean selected,
+                                                  boolean hasFocus) {
+      Component c = label.getListCellRendererComponent(list, value, index, selected, hasFocus);
+      if (index < 0 || value == null || !value.ref().startsWith("refs/")) return c;
+      boolean first = index == 0 || list.getModel().getElementAt(index - 1).remote() != value.remote();
+      if (!first) return c;
+      JPanel panel = new JPanel(new BorderLayout());
+      panel.setOpaque(false);
+      panel.add(new TitledSeparator(value.remote() ? "Remote" : "Local"), BorderLayout.NORTH);
+      panel.add(c, BorderLayout.CENTER);
+      return panel;
+    }
   }
 
   private void updateBranch() {
@@ -154,9 +255,10 @@ public final class NewTicketDialog extends DialogWrapper {
         settingBranch = false;
       }
     }
+    String folder = ticketFolder();
     hint.setText(ws == null || key.isEmpty() ? " "
-        : "<html>Creates <b>" + ws.getName() + "/" + key + "/</b> and opens it as tab <b>"
-          + ws.getName() + " · " + key + "</b>.<br>.env, vendor/ and node_modules/ are copied from main/ (APFS clone).</html>");
+        : "<html>Creates <b>" + ws.getName() + "/" + folder + "/</b> and opens it as tab <b>"
+          + ws.getName() + " · " + folder + "</b>.<br>.env, vendor/ and node_modules/ are copied from main/ (APFS clone).</html>");
   }
 
   @Override
@@ -186,12 +288,13 @@ public final class NewTicketDialog extends DialogWrapper {
     if (ws == null) return new ValidationInfo("Pick a workspace", workspaceCombo);
     String key = ticketKey();
     if (key.isEmpty()) return new ValidationInfo("Enter a ticket key, e.g. LOGIN-42", keyField);
-    if (!Workspace.isValidName(key)) {
-      return new ValidationInfo("Use letters, digits, '.', '-' or '_' only", keyField);
+    if (!Workspace.isValidTicketKey(key)) {
+      return new ValidationInfo("Use letters, digits, '.', '-' or '_', with '/' between parts", keyField);
     }
-    if (key.equals(Workspace.MAIN)) return new ValidationInfo("'main' is reserved", keyField);
-    Ticket t = ws.ticket(key);
-    if (Files.exists(t.getDir())) return new ValidationInfo(key + " already exists in " + ws.getName(), keyField);
+    String folder = ticketFolder();
+    if (folder.equalsIgnoreCase(Workspace.MAIN)) return new ValidationInfo("'main' is reserved", keyField);
+    Ticket t = ws.ticket(folder);
+    if (Files.exists(t.getDir())) return new ValidationInfo(folder + " already exists in " + ws.getName(), keyField);
     String branch = branch();
     if (branch.isEmpty() || branch.contains(" ") || branch.contains("..") || branch.endsWith("/")
         || branch.endsWith(".lock") || branch.startsWith("-")) {
@@ -199,6 +302,11 @@ public final class NewTicketDialog extends DialogWrapper {
     }
     if (rows.stream().noneMatch(r -> r.available() && r.include().isSelected())) {
       return new ValidationInfo("Tick at least one repo", reposPanel);
+    }
+    for (RepoRow r : rows) {
+      if (r.available() && r.include().isSelected() && r.base().getSelectedItem() == null) {
+        return new ValidationInfo("Pick a branch to start " + r.repo() + " from", r.base());
+      }
     }
     return null;
   }

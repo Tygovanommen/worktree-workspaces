@@ -35,11 +35,11 @@ public final class NewTicketAction extends WsAction {
     if (!dialog.showAndGet()) return;
 
     Workspace ws = dialog.workspace();
-    String key = dialog.ticketKey();
+    String folder = dialog.ticketFolder();
     String branch = dialog.branch();
     List<WorkspaceOps.RepoChoice> choices = dialog.choices();
-    Background.run(project, "Creating ticket " + key,
-        (ops, log) -> ops.createTicket(ws, key, branch, choices, log),
+    Background.run(project, "Creating ticket " + folder,
+        (ops, log) -> ops.createTicket(ws, folder, branch, choices, log),
         ticket -> {
           Tickets.open(ticket);
           Feedback.ticketCreated(project);

@@ -12,6 +12,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import nl.netonic.workspaces.core.Workspace;
 import nl.netonic.workspaces.core.WorkspaceConfig;
+import nl.netonic.workspaces.ide.WorkspaceSettings;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
@@ -25,7 +26,8 @@ import java.util.Set;
 public final class NewWorkspaceDialog extends DialogWrapper {
   private final JBTextField nameField = new JBTextField(20);
   private final TextFieldWithBrowseButton locationField = new TextFieldWithBrowseButton();
-  private final JBTextField patternField = new JBTextField(WorkspaceConfig.DEFAULT_BRANCH_PATTERN, 20);
+  private final JBTextField patternField =
+      new JBTextField(WorkspaceSettings.getInstance().defaultBranchPattern(), 20);
   private final RepoSourcesPanel repos;
 
   public NewWorkspaceDialog(@Nullable Project project, Path defaultParent) {

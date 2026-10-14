@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>nl.netonic.worktree-workspaces</id>
   <name>Worktree Workspaces</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <vendor url="https://netonic.nl">Netonic</vendor>
   <idea-version since-build="262"/>
 
@@ -21,6 +21,16 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <p>0.2.0</p>
+    <ul>
+      <li>Links next to the workspace per repo (<code>klant-x-backend</code>, <code>klant-x-login-42-backend</code>)
+          so Herd / Valet find every checkout; made and removed automatically.</li>
+      <li>A terminal tab per repo when a ticket or main opens for the first time; <i>Open in Terminal</i> per repo.</li>
+      <li>After <i>Get from VCS</i>: offer to put the clone in a new or existing workspace.</li>
+      <li>New Ticket: <i>Branch from</i> lists local and remote branches like the Git popup; ticket keys may contain
+          <code>/</code> (<code>LOGIN-42/login-form</code>).</li>
+      <li>Settings › Tools › Worktree Workspaces for all options.</li>
+    </ul>
     <p>0.1.0 — first version: workspaces, tickets as tabs, toolbar switcher, Workspaces panel, finish ticket.</p>
   ]]></change-notes>
 
@@ -32,6 +42,11 @@
                 factoryClass="nl.netonic.workspaces.ide.ui.WorkspacesToolWindowFactory"/>
     <postStartupActivity implementation="nl.netonic.workspaces.ide.TicketStartupActivity"/>
     <notificationGroup id="Worktree Workspaces" displayType="BALLOON"/>
+    <applicationConfigurable parentId="tools" id="nl.netonic.worktree-workspaces" displayName="Worktree Workspaces"
+                             instance="nl.netonic.workspaces.ide.ui.WorkspacesConfigurable"/>
+    <!-- before PhpStorm's own listeners, which open the clone as a project -->
+    <checkoutListener implementation="nl.netonic.workspaces.ide.CloneListener" id="WorktreeWorkspacesClone"
+                      order="before ProjectDirCheckoutListener"/>
   </extensions>
 
   <applicationListeners>
@@ -75,9 +90,11 @@
     <action id="WorktreeWorkspaces.Remove" class="nl.netonic.workspaces.ide.actions.SimpleActions$Remove"
             text="Remove from List" description="Forget this workspace; nothing is deleted"
             icon="AllIcons.General.Remove"/>
-    <action id="WorktreeWorkspaces.MergeIntoTabs" class="nl.netonic.workspaces.ide.actions.SimpleActions$MergeIntoTabs"
-            text="Open Tickets as Tabs in One Window"
-            description="macOS: merge new ticket windows into tabs (Window › Merge All Project Windows)"/>
+    <action id="WorktreeWorkspaces.OpenSettings" class="nl.netonic.workspaces.ide.actions.SimpleActions$OpenSettings"
+            text="Settings…" description="Settings › Tools › Worktree Workspaces" icon="AllIcons.General.Settings"/>
+    <action id="WorktreeWorkspaces.OpenRepoTerminal" class="nl.netonic.workspaces.ide.actions.SimpleActions$OpenRepoTerminal"
+            text="Open in Terminal" description="Open a terminal tab in this repo's folder"
+            icon="AllIcons.Nodes.Console"/>
     <action id="WorktreeWorkspaces.ReportIssue" class="nl.netonic.workspaces.ide.actions.SimpleActions$ReportIssue"
             text="Report an Issue…" description="Open a bug report on GitHub with your PhpStorm and plugin versions filled in"
             icon="AllIcons.General.ShowWarning"/>
@@ -91,7 +108,7 @@
     </action>
 
     <group id="WorktreeWorkspaces.Options" text="Options" popup="true" icon="AllIcons.General.GearPlain">
-      <reference ref="WorktreeWorkspaces.MergeIntoTabs"/>
+      <reference ref="WorktreeWorkspaces.OpenSettings"/>
       <reference ref="WorktreeWorkspaces.EditConfig"/>
       <reference ref="WorktreeWorkspaces.AddExistingWorkspace"/>
       <separator/>
@@ -113,6 +130,7 @@
     <group id="WorktreeWorkspaces.TreePopup">
       <reference ref="WorktreeWorkspaces.OpenSelected"/>
       <reference ref="WorktreeWorkspaces.AddWorktreeToTicket"/>
+      <reference ref="WorktreeWorkspaces.OpenRepoTerminal"/>
       <reference ref="WorktreeWorkspaces.NewTicket"/>
       <reference ref="WorktreeWorkspaces.FinishTicket"/>
       <separator/>

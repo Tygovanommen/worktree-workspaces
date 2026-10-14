@@ -22,6 +22,9 @@ public final class CoreTests {
     test("porcelain v2 parsing", CoreTests::porcelainParse);
     test("full flow: workspace, adopt, clone, tickets, finish", CoreTests::fullFlow);
     test("invalid names and main protection", CoreTests::guards);
+    test("ticket keys with '/', saved branch, branch-from refs", CoreTests::slashKeysAndBases);
+    test("links next to the workspace", CoreTests::links);
+    test("options: links off, default copy list; clone name suggestions", CoreTests::optionsAndCloneNames);
     test("delete never follows symlinks", CoreTests::deleteKeepsLinkTargets);
 
     System.out.println();
@@ -102,6 +105,25 @@ public final class CoreTests {
     eq(List.of("composer install"), ((Map<?, ?>) ((Map<?, ?>) saved.get("repos")).get("backend")).get("setup"),
         "unknown repo field kept");
     check(!Files.exists(dir.resolve(WorkspaceConfig.FILE_NAME + ".tmp")), "no temp file left");
+
+    // a ticket's branch is kept per folder, with fields a newer version added
+    Files.writeString(f, """
+        { "name": "n", "tickets": { "A-1-x": { "branch": "feature/A-1/x", "notes": "hi" }, "../evil": {} } }
+        """);
+    WorkspaceConfig c4 = WorkspaceConfig.load(f);
+    eq("feature/A-1/x", c4.ticketBranch("A-1-x"), "saved ticket branch");
+    eq("feature/B-2", c4.ticketBranch("B-2"), "unsaved ticket falls back to the pattern");
+    c4.setTicketBranch("B-2", "bugfix/B-2/y");
+    c4.save(f);
+    WorkspaceConfig c5 = WorkspaceConfig.load(f);
+    eq("bugfix/B-2/y", c5.ticketBranch("B-2"), "ticket branch saved");
+    Map<?, ?> tickets = (Map<?, ?>) ((Map<?, ?>) Json.parse(Files.readString(f))).get("tickets");
+    eq(Map.of("branch", "feature/A-1/x", "notes", "hi"), tickets.get("A-1-x"), "unknown ticket field kept");
+    check(!tickets.containsKey("../evil"), "unsafe ticket name skipped");
+    c5.removeTicket("A-1-x");
+    c5.removeTicket("B-2");
+    c5.save(f);
+    check(!((Map<?, ?>) Json.parse(Files.readString(f))).containsKey("tickets"), "empty tickets section not written");
   }
 
   static void porcelainParse() {
@@ -140,7 +162,8 @@ public final class CoreTests {
     check(Workspace.isWorkspaceRoot(ws.getRoot()), "workspace file written");
 
     ops.adoptRepo(ws, "backend", existing, WorkspaceOps.Log.NONE);
-    check(!Files.exists(existing), "existing checkout moved");
+    check(Files.isSymbolicLink(existing), "existing checkout moved, a link left at the old path");
+    eq(ws.mainDir().resolve("backend"), Links.resolve(existing), "old path links to main/backend");
     check(Ticket.isGitDir(ws.mainDir().resolve("backend")), "backend in main");
 
     ops.addRepoByClone(ws, "frontend", remoteFrontend.toString(), WorkspaceOps.Log.NONE);
@@ -326,6 +349,204 @@ public final class CoreTests {
       // ok
     }
     check(Files.isDirectory(otherClone.resolve(".git")), "other workspace's clone untouched");
+  }
+
+  static void slashKeysAndBases() throws Exception {
+    for (String ok : List.of("LOGIN-42", "LOGIN-42/login-form", "a/b/c")) {
+      check(Workspace.isValidTicketKey(ok), "valid key " + ok);
+    }
+    for (String bad : List.of("", "/a", "a/", "a//b", "a/../b", "a/.x", "a b/c", "a\\b")) {
+      check(!Workspace.isValidTicketKey(bad), "invalid key '" + bad + "'");
+    }
+    eq("LOGIN-42-login-form", Workspace.ticketFolderName("LOGIN-42/login-form"), "folder name");
+
+    Path tmp = Files.createTempDirectory("wsbases");
+    GitRunner git = GitRunner.fromSystem();
+    WorkspaceOps ops = new WorkspaceOps(git);
+    Path remoteRepo = bareRepoWithCommit(git, tmp, "remote-app", "develop");
+    Workspace ws = ops.createWorkspace(tmp, "w");
+    ops.addRepoByClone(ws, "app", remoteRepo.toString(), WorkspaceOps.Log.NONE);
+    Path app = ws.mainDir().resolve("app");
+
+    // local develop gets a commit origin doesn't have; origin gets a branch not checked out locally
+    Files.writeString(app.resolve("local.txt"), "x\n");
+    git.run(app, "add", ".").orThrow("add");
+    git.run(app, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "local").orThrow("commit");
+    git.run(app, "push", "origin", "origin/develop:refs/heads/release/1.0").orThrow("push");
+    git.run(app, "fetch", "origin").orThrow("fetch");
+    String localDevelop = git.run(app, "rev-parse", "refs/heads/develop").out();
+    String originDevelop = git.run(app, "rev-parse", "refs/remotes/origin/develop").out();
+    check(!localDevelop.equals(originDevelop), "local develop is ahead");
+
+    WorkspaceOps.Branches branches = ops.listBranches(app);
+    eq(List.of("refs/heads/develop"), branches.local(), "local branches");
+    eq(List.of("refs/remotes/origin/develop", "refs/remotes/origin/release/1.0"), branches.remote(),
+        "remote branches, without origin/HEAD");
+
+    // the dialog turns LOGIN-42/login-form into this folder and branch
+    String folder = Workspace.ticketFolderName("LOGIN-42/login-form");
+    Ticket slash = ops.createTicket(ws, folder, ws.getConfig().branchFor("LOGIN-42/login-form"), List.of(
+        new WorkspaceOps.RepoChoice("app", true, "refs/remotes/origin/develop")), WorkspaceOps.Log.NONE);
+    eq(tmp.resolve("w/LOGIN-42-login-form"), slash.getDir(), "ticket folder");
+    eq("feature/LOGIN-42/login-form", git.run(slash.getDir().resolve("app"), "branch", "--show-current").out(), "branch");
+    eq(originDevelop, git.run(slash.getDir().resolve("app"), "rev-parse", "HEAD").out(), "picked origin/develop");
+    eq("w \u00b7 LOGIN-42-login-form", Files.readString(slash.getDir().resolve(".idea/.name"), StandardCharsets.UTF_8),
+        "tab name");
+    eq("feature/LOGIN-42/login-form", WorkspaceConfig.load(ws.configFile()).ticketBranch(folder), "branch saved");
+    eq("feature/LOGIN-42/login-form", ws.getConfig().ticketBranch(folder), "branch saved in memory too");
+
+    Ticket local = ops.createTicket(ws, "L-1", "feature/L-1", List.of(
+        new WorkspaceOps.RepoChoice("app", true, "refs/heads/develop")), WorkspaceOps.Log.NONE);
+    eq(localDevelop, git.run(local.getDir().resolve("app"), "rev-parse", "HEAD").out(), "picked local develop as-is");
+
+    Ticket plain = ops.createTicket(ws, "P-1", "feature/P-1", List.of(
+        new WorkspaceOps.RepoChoice("app", true, "develop")), WorkspaceOps.Log.NONE);
+    eq(localDevelop, git.run(plain.getDir().resolve("app"), "rev-parse", "HEAD").out(), "plain name: local first");
+
+    Ticket remoteOnly = ops.createTicket(ws, "R-1", "feature/R-1", List.of(
+        new WorkspaceOps.RepoChoice("app", true, "release/1.0")), WorkspaceOps.Log.NONE);
+    eq(originDevelop, git.run(remoteOnly.getDir().resolve("app"), "rev-parse", "HEAD").out(),
+        "plain name without a local branch: origin's");
+
+    for (String missing : List.of("refs/heads/nope", "refs/remotes/origin/nope", "refs/remotes/upstream/develop")) {
+      try {
+        ops.createTicket(ws, "X-1", "feature/X-1", List.of(
+            new WorkspaceOps.RepoChoice("app", true, missing)), WorkspaceOps.Log.NONE);
+        throw new AssertionError("branched from missing " + missing);
+      } catch (GitException expected) {
+        check(!Files.exists(ws.getRoot().resolve("X-1")), "nothing left for " + missing);
+      }
+    }
+
+    WorkspaceOps.FinishResult done = ops.finishTicket(slash, true, false, WorkspaceOps.Log.NONE);
+    check(done.folderRemoved(), "slash ticket finished: " + done.messages());
+    eq("feature/" + folder, WorkspaceConfig.load(ws.configFile()).ticketBranch(folder), "saved branch removed on finish");
+  }
+
+  static void links() throws Exception {
+    Path tmp = Files.createTempDirectory("wslinks");
+    GitRunner git = GitRunner.fromSystem();
+    WorkspaceOps ops = new WorkspaceOps(git);
+    Path remoteApi = bareRepoWithCommit(git, tmp, "remote-api", "main");
+    Path remoteWeb = bareRepoWithCommit(git, tmp, "remote-web", "main");
+    Workspace ws = ops.createWorkspace(tmp, "Klant_X");
+
+    // something the user already has under a link's name is never touched
+    Path taken = Files.createDirectories(tmp.resolve("klant-x-web"));
+    Files.writeString(taken.resolve("mine.txt"), "keep\n");
+
+    List<String> warnings = new ArrayList<>();
+    WorkspaceOps.Log log = new WorkspaceOps.Log() {
+      @Override public void step(String text) {}
+      @Override public void warn(String text) { warnings.add(text); }
+    };
+    ops.addRepoByClone(ws, "api", remoteApi.toString(), log);
+    ops.addRepoByClone(ws, "web", remoteWeb.toString(), log);
+    eq("klant-x-api", Links.name(ws.ticket(Workspace.MAIN), "api"), "main link name: lowercase, '_' becomes '-'");
+    check(Files.isSymbolicLink(tmp.resolve("klant-x-api")), "main api linked");
+    eq(ws.mainDir().resolve("api"), Links.resolve(tmp.resolve("klant-x-api")), "points at main/api");
+    check(!Links.resolve(tmp.resolve("klant-x-api")).equals(Files.readSymbolicLink(tmp.resolve("klant-x-api"))),
+        "stored relative");
+    check(!Files.isSymbolicLink(taken) && Files.exists(taken.resolve("mine.txt")), "existing folder untouched");
+    check(warnings.stream().anyMatch(w -> w.contains("klant-x-web") && w.contains("already exists")), "warned: " + warnings);
+
+    Ticket t = ops.createTicket(ws, Workspace.ticketFolderName("LOGIN-42/form"), "feature/LOGIN-42/form", List.of(
+        new WorkspaceOps.RepoChoice("api", true, null),
+        new WorkspaceOps.RepoChoice("web", false, null)), log);
+    Path apiLink = tmp.resolve("klant-x-login-42-form-api");
+    check(Files.isSymbolicLink(apiLink), "ticket worktree linked");
+    eq(t.getDir().resolve("api"), Links.resolve(apiLink), "points at the worktree");
+    check(Files.isRegularFile(apiLink.resolve("README.md")), "readable through the link");
+    check(!Files.exists(tmp.resolve("klant-x-login-42-form-web"), java.nio.file.LinkOption.NOFOLLOW_LINKS),
+        "attached repo not linked");
+
+    // adding the repo to the ticket later links it too
+    ops.addWorktree(ws, t, "web", "feature/LOGIN-42/form", null, log);
+    check(Files.isSymbolicLink(tmp.resolve("klant-x-login-42-form-web")), "added worktree linked");
+
+    // a link is never adopted (that would move the link, not the checkout)
+    Workspace other = ops.createWorkspace(tmp, "other");
+    try {
+      ops.adoptRepo(other, "api", apiLink, log);
+      throw new AssertionError("adopted a link");
+    } catch (IOException expected) {
+      // ok
+    }
+
+    // workspaces made before links existed get them with syncLinks; existing links are left alone
+    Files.delete(apiLink);
+    eq(List.of("klant-x-login-42-form-api"), ops.syncLinks(ws, log).created(), "missing link recreated");
+    eq(new WorkspaceOps.LinkChanges(List.of(), List.of()), ops.syncLinks(ws, log), "nothing to do the second time");
+
+    // finish removes the ticket's links, never their targets, never main's links or other files
+    WorkspaceOps.FinishResult done = ops.finishTicket(t, true, false, log);
+    check(done.folderRemoved(), "finished: " + done.messages());
+    check(!Files.exists(apiLink, java.nio.file.LinkOption.NOFOLLOW_LINKS), "ticket api link removed");
+    check(!Files.exists(tmp.resolve("klant-x-login-42-form-web"), java.nio.file.LinkOption.NOFOLLOW_LINKS),
+        "ticket web link removed");
+    check(Files.isSymbolicLink(tmp.resolve("klant-x-api")) && Files.isDirectory(ws.mainDir().resolve("api/.git")),
+        "main link and main checkout kept");
+    check(Files.exists(taken.resolve("mine.txt")), "user's folder still untouched");
+
+    // a link with the ticket's name that points elsewhere is not removed
+    Ticket t2 = ops.createTicket(ws, "T-2", "feature/T-2", List.of(new WorkspaceOps.RepoChoice("api", true, null)), log);
+    Path t2Link = tmp.resolve("klant-x-t-2-api");
+    Files.delete(t2Link);
+    Files.createSymbolicLink(t2Link, taken);
+    ops.finishTicket(t2, true, false, log);
+    check(Files.isSymbolicLink(t2Link), "foreign link kept");
+
+    // a ticket deleted outside the plugin: the next sync removes its links, and nothing else
+    Ticket t3 = ops.createTicket(ws, "T-3", "feature/T-3", List.of(new WorkspaceOps.RepoChoice("api", true, null)), log);
+    Path t3Link = tmp.resolve("klant-x-t-3-api");
+    check(Files.isSymbolicLink(t3Link), "T-3 linked");
+    Path gone = Files.createDirectories(tmp.resolve("gone"));
+    Path userLink = tmp.resolve("klant-x-notes");          // named like ours, but points outside the workspace
+    Files.createSymbolicLink(userLink, gone);
+    Path otherLink = tmp.resolve("mine-api");              // points into the workspace, but not named like ours
+    Files.createSymbolicLink(otherLink, ws.getRoot().resolve("T-3/api"));
+    git.run(ws.mainDir().resolve("api"), "worktree", "remove", "--force", t3.getDir().resolve("api").toString())
+        .orThrow("remove");
+    FileCloner.deleteRecursively(t3.getDir());
+    Files.delete(gone);
+    WorkspaceOps.LinkChanges tidy = ops.syncLinks(ws, log);
+    eq(List.of("klant-x-t-3-api"), tidy.removed(), "dangling ticket link removed");
+    check(Files.isSymbolicLink(userLink) && Files.isSymbolicLink(otherLink), "links that aren't ours kept");
+    check(Files.isSymbolicLink(tmp.resolve("klant-x-api")), "main link kept");
+    check(Files.isDirectory(ws.mainDir().resolve("api/.git")), "main checkout kept");
+  }
+
+  static void optionsAndCloneNames() throws Exception {
+    eq(new Workspace.CloneNames("billebly", "api"), Workspace.suggestNames("billebly-api"), "split at last '-'");
+    eq(new Workspace.CloneNames("klant-x", "backend"), Workspace.suggestNames("klant-x-backend"), "only the last '-'");
+    eq(new Workspace.CloneNames("my", "repo"), Workspace.suggestNames("my_repo"), "'_' too");
+    eq(new Workspace.CloneNames("api.nightcore.com", "api.nightcore.com"), Workspace.suggestNames("api.nightcore.com"),
+        "no '-': folder name for both");
+    eq(new Workspace.CloneNames("-x", "-x"), Workspace.suggestNames("-x"), "leading '-' not split");
+
+    Path tmp = Files.createTempDirectory("wsoptions");
+    GitRunner git = GitRunner.fromSystem();
+    Path remote = bareRepoWithCommit(git, tmp, "remote-app", "main");
+    WorkspaceOps withLinks = new WorkspaceOps(git);
+    WorkspaceOps noLinks = new WorkspaceOps(git, new WorkspaceOps.Options(false, List.of(".env")));
+    Workspace ws = noLinks.createWorkspace(tmp, "w");
+    noLinks.addRepoByClone(ws, "app", remote.toString(), WorkspaceOps.Log.NONE);
+    check(!Files.exists(tmp.resolve("w-app"), java.nio.file.LinkOption.NOFOLLOW_LINKS), "links off: no link on clone");
+    eq(List.of(".env"), WorkspaceConfig.load(ws.configFile()).getRepos().get("app").getCopy(), "default copy list used");
+    Ticket t = noLinks.createTicket(ws, "T-1", "feature/T-1", List.of(new WorkspaceOps.RepoChoice("app", true, null)),
+        WorkspaceOps.Log.NONE);
+    check(!Files.exists(tmp.resolve("w-t-1-app"), java.nio.file.LinkOption.NOFOLLOW_LINKS), "links off: no ticket link");
+    eq(List.of(), noLinks.syncLinks(ws, WorkspaceOps.Log.NONE).created(), "links off: sync creates nothing");
+
+    // switched on: the scan makes them; switched off again: the scan removes them (and only ours)
+    eq(List.of("w-app", "w-t-1-app"), withLinks.syncLinks(ws, WorkspaceOps.Log.NONE).created(), "links on: created");
+    Path mine = tmp.resolve("w-mine");
+    Files.createSymbolicLink(mine, tmp.resolve("remote-app.git"));
+    eq(List.of("w-app", "w-t-1-app"), noLinks.syncLinks(ws, WorkspaceOps.Log.NONE).removed().stream().sorted().toList(),
+        "links off: removed");
+    check(Files.isSymbolicLink(mine), "link pointing outside the workspace kept");
+    check(Files.isDirectory(ws.mainDir().resolve("app/.git")) && Files.isDirectory(t.getDir().resolve("app")),
+        "targets kept");
   }
 
   static void deleteKeepsLinkTargets() throws Exception {

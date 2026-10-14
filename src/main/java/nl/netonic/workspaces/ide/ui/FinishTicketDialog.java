@@ -11,6 +11,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.core.WorkspaceOps;
+import nl.netonic.workspaces.ide.WorkspaceSettings;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
@@ -21,7 +22,8 @@ public final class FinishTicketDialog extends DialogWrapper {
   private final Ticket ticket;
   private final List<WorkspaceOps.Problem> problems;
   private final boolean hasUncommitted;
-  private final JBCheckBox deleteBranches = new JBCheckBox("Delete branches that are fully merged", true);
+  private final JBCheckBox deleteBranches = new JBCheckBox("Delete branches that are fully merged",
+      WorkspaceSettings.getInstance().isDeleteMergedBranches());
   private final JBCheckBox discard = new JBCheckBox("Discard uncommitted changes");
 
   public FinishTicketDialog(@Nullable Project project, Ticket ticket, List<WorkspaceOps.Problem> problems) {

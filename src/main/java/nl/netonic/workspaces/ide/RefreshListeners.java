@@ -13,7 +13,7 @@ public final class RefreshListeners {
   public static final class OnActivation implements ApplicationActivationListener {
     @Override
     public void applicationActivated(@NotNull IdeFrame ideFrame) {
-      WorkspaceModel.getInstance().refreshIfStale(10_000);
+      if (WorkspaceSettings.getInstance().isRefreshOnFocus()) WorkspaceModel.getInstance().refreshIfStale(10_000);
     }
   }
 
