@@ -17,14 +17,18 @@ import nl.netonic.workspaces.ide.ui.AddRepoDialog;
 import nl.netonic.workspaces.ide.ui.RepoSourcesPanel;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /** Clones a repo into main/, or moves an existing checkout there. */
 public final class AddRepoAction extends WsAction {
   @Override
   public void update(@NotNull AnActionEvent e) {
-    e.getPresentation().setEnabled(ActionContext.workspace(e) != null);
+    Workspace ws = ActionContext.workspace(e);
+    // a single-repo workspace has its repo in main/ itself: there is no main/<name> for a second one
+    e.getPresentation().setEnabled(ws != null && !ws.isSingleRepo());
   }
 
   @Override
@@ -50,22 +54,28 @@ public final class AddRepoAction extends WsAction {
         if (!ProjectManager.getInstance().closeAndDispose(p)) return; // closing was cancelled: move nothing
       }
       Background.run(reportTo, "Adding repo to " + ws.getName(), (ops, log) -> {
-        addAll(ops, Workspace.load(ws.getRoot()), sources, log);
+        addAll(ops, Workspace.load(ws.getRoot()), sources, Map.of(), log);
         return null;
       }, ignored -> {});
     });
   }
 
-  /** Clones or moves each source; failures become warnings so the others still get added. */
-  static void addAll(WorkspaceOps ops, Workspace ws, List<RepoSourcesPanel.RepoSource> sources, WorkspaceOps.Log log) {
+  /**
+   * Clones or moves each source; failures become warnings so the others still get added. A null name: main/ itself.
+   * {@code cameFrom}: original paths of checkouts that were moved aside first.
+   */
+  static void addAll(WorkspaceOps ops, Workspace ws, List<RepoSourcesPanel.RepoSource> sources,
+                     Map<Path, Path> cameFrom, WorkspaceOps.Log log) {
     for (RepoSourcesPanel.RepoSource s : sources) {
       try {
-        if (s.existing() != null) ops.adoptRepo(ws, s.name(), s.existing(), log);
+        if (s.existing() != null) {
+          ops.adoptRepo(ws, s.name(), s.existing(), cameFrom.getOrDefault(s.existing(), s.existing()), log);
+        }
         else ops.addRepoByClone(ws, s.name(), s.url(), log);
       } catch (ProcessCanceledException ex) {
         throw ex;
       } catch (Exception ex) {
-        log.warn(s.name() + ": " + ex.getMessage());
+        log.warn((s.name() != null ? s.name() : "main") + ": " + ex.getMessage());
       }
     }
     VirtualFile cfg = LocalFileSystem.getInstance().findFileByNioFile(ws.configFile());

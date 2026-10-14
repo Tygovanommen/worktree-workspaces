@@ -15,7 +15,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /** Creates &lt;location&gt;/&lt;name&gt;/ with main/ holding the cloned or moved repos, then opens main as a tab. */
@@ -49,9 +51,15 @@ public final class NewWorkspaceAction extends WsAction {
       }
       Background.run(reportTo, "Creating workspace " + name, (ops, log) -> {
         List<RepoSourcesPanel.RepoSource> moved = new ArrayList<>();
+        Map<Path, Path> cameFrom = new HashMap<>(); // moved aside → original path, remembered for Undo Workspace
         for (RepoSourcesPanel.RepoSource s : sources) {
-          moved.add(s.existing() == null ? s
-              : new RepoSourcesPanel.RepoSource(s.name(), ops.moveAsideForWorkspace(parent, name, s.existing(), log), null));
+          if (s.existing() == null) {
+            moved.add(s);
+            continue;
+          }
+          Path now = ops.moveAsideForWorkspace(parent, name, s.existing(), log);
+          cameFrom.put(now, s.existing());
+          moved.add(new RepoSourcesPanel.RepoSource(s.name(), now, null));
         }
         Workspace ws = ops.createWorkspace(parent, name);
         if (!pattern.isEmpty()) {
@@ -59,7 +67,7 @@ public final class NewWorkspaceAction extends WsAction {
           ws.saveConfig();
         }
         WorkspaceSettings.getInstance().addWorkspace(ws.getRoot());
-        AddRepoAction.addAll(ops, ws, moved, log);
+        AddRepoAction.addAll(ops, ws, moved, cameFrom, log);
         return Workspace.load(ws.getRoot());
       }, ws -> Tickets.open(ws.ticket(Workspace.MAIN)));
     });

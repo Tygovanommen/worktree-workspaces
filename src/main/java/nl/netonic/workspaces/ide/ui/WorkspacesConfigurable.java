@@ -31,6 +31,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
   private JBCheckBox links;
   private TextFieldWithBrowseButton folder;
   private JBTextField pattern;
+  private JBTextField repos;
   private JBTextField copy;
   private JBCheckBox deleteMerged;
   private JBCheckBox refreshOnFocus;
@@ -58,6 +59,8 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     ((JBTextField) folder.getTextField()).getEmptyText().setText("folder used last, else ~/PhpstormProjects");
     pattern = new JBTextField(20);
     pattern.getEmptyText().setText(WorkspaceConfig.DEFAULT_BRANCH_PATTERN);
+    repos = new JBTextField(30);
+    repos.getEmptyText().setText("one repo, in main/ itself");
     copy = new JBTextField(30);
     deleteMerged = new JBCheckBox("Delete merged branches when finishing a ticket");
     refreshOnFocus = new JBCheckBox("Refresh git status when PhpStorm gets focus");
@@ -80,6 +83,9 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
         .addLabeledComponent("Location:", left(folder))
         .addLabeledComponent("Branch pattern:", left(pattern))
         .addComponentToRightColumn(comment("{ticket} becomes the ticket key, e.g. feature/LOGIN-42"))
+        .addLabeledComponent("Repos:", left(repos))
+        .addComponentToRightColumn(comment("Comma separated; the repo rows New Workspace starts with, each one a "
+            + "folder in main/. Rows can be removed there; a workspace with one repo has it in main/ itself."))
         .addLabeledComponent("Files to copy:", left(copy))
         .addComponentToRightColumn(comment("Comma separated; copied from main into every new ticket. Used for repos "
             + "added from now on, existing repos keep their list in .workspace.json."))
@@ -124,6 +130,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
         || links.isSelected() != s.createLinks
         || !folder.getText().trim().equals(s.defaultWorkspaceFolder)
         || !pattern.getText().trim().equals(s.defaultBranchPattern)
+        || !repos.getText().trim().equals(s.defaultRepos)
         || !copy.getText().trim().equals(s.defaultCopy)
         || deleteMerged.isSelected() != s.deleteMergedBranches
         || refreshOnFocus.isSelected() != s.refreshOnFocus;
@@ -143,6 +150,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     s.createLinks = links.isSelected();
     s.defaultWorkspaceFolder = folder.getText().trim();
     s.defaultBranchPattern = p.isEmpty() ? WorkspaceConfig.DEFAULT_BRANCH_PATTERN : p;
+    s.defaultRepos = String.join(", ", WorkspaceSettings.parseRepoNames(repos.getText()));
     s.defaultCopy = String.join(", ", WorkspaceSettings.parseCopyList(copy.getText()));
     s.deleteMergedBranches = deleteMerged.isSelected();
     s.refreshOnFocus = refreshOnFocus.isSelected();
@@ -160,6 +168,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     links.setSelected(s.createLinks);
     folder.setText(s.defaultWorkspaceFolder);
     pattern.setText(s.defaultBranchPattern);
+    repos.setText(s.defaultRepos);
     copy.setText(s.defaultCopy);
     deleteMerged.setSelected(s.deleteMergedBranches);
     refreshOnFocus.setSelected(s.refreshOnFocus);

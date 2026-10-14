@@ -5,6 +5,8 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.ui.ValidationInfo;
+import com.intellij.openapi.ui.popup.IconButton;
+import com.intellij.ui.InplaceButton;
 import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
@@ -25,23 +27,25 @@ import java.util.Set;
 
 /**
  * Rows of "repo name  +  source", where the source is either a git URL (cloned) or an existing
- * checkout folder (moved into main/&lt;name&gt;). Empty rows are ignored.
+ * checkout folder (moved into main/&lt;name&gt;). Empty rows are ignored; each row can be removed while more than one is
+ * left. With {@code oneRepoInMain}, a single repo needs no name: it goes in main/ itself, so a lone row hides its name.
  */
 public final class RepoSourcesPanel extends JPanel {
 
   /** One repo to add. {@code existing} is set for folders, {@code url} for clones. */
   public record RepoSource(String name, @Nullable Path existing, @Nullable String url) {}
 
-  private record Row(JBTextField name, TextFieldWithBrowseButton source) {}
+  private record Row(JBTextField name, TextFieldWithBrowseButton source, InplaceButton remove) {}
 
   private final Project project;
+  private final boolean oneRepoInMain;
   private final List<Row> rows = new ArrayList<>();
   private final JPanel grid = new JPanel(new GridBagLayout());
-  private int y;
 
-  public RepoSourcesPanel(@Nullable Project project, List<String> initialNames, boolean allowMore) {
+  public RepoSourcesPanel(@Nullable Project project, List<String> initialNames, boolean allowMore, boolean oneRepoInMain) {
     super(new GridBagLayout());
     this.project = project;
+    this.oneRepoInMain = oneRepoInMain;
     GridBagConstraints c = new GridBagConstraints();
     c.gridx = 0;
     c.gridy = 0;
@@ -49,21 +53,12 @@ public final class RepoSourcesPanel extends JPanel {
     c.weightx = 1;
     add(grid, c);
 
-    GridBagConstraints h = new GridBagConstraints();
-    h.gridy = y++;
-    h.anchor = GridBagConstraints.WEST;
-    h.insets = JBUI.insets(0, 0, 2, 8);
-    h.gridx = 0;
-    grid.add(muted("Name in workspace"), h);
-    h.gridx = 1;
-    grid.add(muted("Git URL to clone, or an existing checkout folder"), h);
-
-    for (String n : initialNames) addRow(n);
+    for (String n : initialNames.isEmpty() ? List.of("") : initialNames) rows.add(newRow(n));
+    layoutRows();
     if (allowMore) {
       ActionLink more = new ActionLink("Add another repo", e -> {
-        addRow("");
-        revalidate();
-        repaint();
+        rows.add(newRow(""));
+        layoutRows();
       });
       more.setIcon(AllIcons.General.Add);
       c.gridy = 1;
@@ -80,28 +75,83 @@ public final class RepoSourcesPanel extends JPanel {
     return l;
   }
 
-  private void addRow(String name) {
+  private Row newRow(String name) {
     JBTextField nameField = new JBTextField(name, 10);
     TextFieldWithBrowseButton source = new TextFieldWithBrowseButton();
     source.addBrowseFolderListener(project, FileChooserDescriptorFactory.singleDir().withTitle("Existing Checkout"));
     source.getTextField().setColumns(34);
-    GridBagConstraints c = new GridBagConstraints();
-    c.gridy = y++;
-    c.insets = JBUI.insets(2, 0, 2, 8);
-    c.gridx = 0;
-    c.anchor = GridBagConstraints.WEST;
-    grid.add(nameField, c);
-    c.gridx = 1;
-    c.fill = GridBagConstraints.HORIZONTAL;
-    c.weightx = 1;
-    grid.add(source, c);
-    rows.add(new Row(nameField, source));
+    Row[] self = new Row[1];
+    InplaceButton remove = new InplaceButton(
+        new IconButton("Remove this repo", AllIcons.Actions.Close, AllIcons.Actions.CloseHovered), e -> {
+          rows.remove(self[0]);
+          layoutRows();
+        });
+    self[0] = new Row(nameField, source, remove);
+    return self[0];
+  }
+
+  /** Re-adds the rows: names hidden for a lone row in main/, remove buttons only while there are several. */
+  private void layoutRows() {
+    grid.removeAll();
+    boolean names = showNames();
+    GridBagConstraints h = new GridBagConstraints();
+    h.gridy = 0;
+    h.anchor = GridBagConstraints.WEST;
+    h.insets = JBUI.insets(0, 0, 2, 8);
+    if (names) {
+      h.gridx = 0;
+      grid.add(muted("Name in workspace"), h);
+    }
+    h.gridx = 1;
+    grid.add(muted(names ? "Git URL to clone, or an existing checkout folder"
+        : "Git URL to clone, or an existing checkout folder (goes in main/ itself)"), h);
+
+    for (int i = 0; i < rows.size(); i++) {
+      Row r = rows.get(i);
+      GridBagConstraints c = new GridBagConstraints();
+      c.gridy = i + 1;
+      c.insets = JBUI.insets(2, 0, 2, 8);
+      c.anchor = GridBagConstraints.WEST;
+      if (names) {
+        c.gridx = 0;
+        grid.add(r.name(), c);
+      }
+      c.gridx = 1;
+      c.fill = GridBagConstraints.HORIZONTAL;
+      c.weightx = 1;
+      grid.add(r.source(), c);
+      if (rows.size() > 1) {
+        c.gridx = 2;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        c.insets = JBUI.insets(2, 0);
+        grid.add(r.remove(), c);
+      }
+    }
+    revalidate();
+    repaint();
+  }
+
+  private boolean showNames() {
+    return !(oneRepoInMain && rows.size() == 1);
+  }
+
+  /**
+   * True when the repos go in main/ itself: allowed by the dialog and at most one row has a source.
+   * Its {@link #sources()} entry then has a null name.
+   */
+  public boolean isOneRepoInMain() {
+    if (!oneRepoInMain) return false;
+    int filled = 0;
+    for (Row r : rows) if (!r.source().getText().isBlank()) filled++;
+    return filled <= 1;
   }
 
   public List<RepoSource> sources() {
     List<RepoSource> out = new ArrayList<>();
+    boolean inMain = isOneRepoInMain();
     for (Row r : rows) {
-      String name = r.name().getText().trim();
+      String name = inMain ? null : r.name().getText().trim();
       String src = r.source().getText().trim();
       if (src.isEmpty()) continue;
       Path p = asExistingFolder(src);
@@ -124,12 +174,15 @@ public final class RepoSourcesPanel extends JPanel {
   /** Checks names and sources; {@code existingNames} are repos already in the workspace. */
   public @Nullable ValidationInfo validate(Set<String> existingNames) {
     Set<String> seen = new HashSet<>(existingNames);
+    boolean inMain = isOneRepoInMain();
     for (Row r : rows) {
       String name = r.name().getText().trim();
       String src = r.source().getText().trim();
       if (src.isEmpty()) continue;
-      if (!Workspace.isValidName(name)) return new ValidationInfo("Repo name: letters, digits, '.', '-', '_'", r.name());
-      if (!seen.add(name)) return new ValidationInfo("'" + name + "' is used twice", r.name());
+      if (!inMain) {
+        if (!Workspace.isValidName(name)) return new ValidationInfo("Repo name: letters, digits, '.', '-', '_'", r.name());
+        if (!seen.add(name)) return new ValidationInfo("'" + name + "' is used twice", r.name());
+      }
       Path p = asExistingFolder(src);
       if (p != null) {
         if (!Files.exists(p.resolve(".git"))) return new ValidationInfo("Not a git checkout", r.source());

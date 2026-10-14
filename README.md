@@ -53,7 +53,9 @@ Requires PhpStorm 2026.2 or newer.
 
 1. **Tools › Workspaces › New Workspace…** Give it a name (`klant-x`) and add your repos, either as a git URL or as
    an existing checkout (moved into `klant-x/main/`; a checkout may have the workspace's own name, e.g. turn
-   `~/PhpstormProjects/klant-x` into workspace `klant-x`). `main` opens as the first tab.
+   `~/PhpstormProjects/klant-x` into workspace `klant-x`). `main` opens as the first tab. The rows start as
+   `backend` and `frontend` (change that in Settings); remove the ones you don't need. With just one repo there is no
+   name: `main/` is the repo itself.
 2. **New Ticket…** (toolbar switcher or the panel's **+**). Type `LOGIN-42` and tick the repos it touches. A tab opens
    with fresh worktrees on `feature/LOGIN-42`. Type `LOGIN-42/login-form` for `feature/LOGIN-42/login-form`.
 3. Work, commit, push. When it's merged: right-click the ticket › **Finish Ticket…**
@@ -83,6 +85,9 @@ klant-x/LOGIN-42/backend`, so Herd serves `klant-x-login-42-backend.test`. Adopt
 old path. It all happens automatically: links are made with tickets and repos, removed when a ticket is finished (or
 its folder is deleted), and never replace anything that's already there.
 
+A workspace with one repo skips the repo folders: `main/` is the clone, `LOGIN-42/` its worktree, and the links are
+`klant-x-main` and `klant-x-login-42`. Such a workspace can't take a second repo later.
+
 Every repo keeps a single `.git` in `main/`, and ticket folders hold worktrees of it. Shared `.idea` settings (PHP
 interpreter, code style, run configurations, data sources) are copied from `main/.idea`. `workspace.xml` is never
 copied, so tickets stay separate projects.
@@ -93,7 +98,7 @@ copied, so tickets stay separate projects.
 | --- | --- |
 | **Workspaces** tool window (left) | Workspaces › tickets › repos with branch, changed files (`3 changed`) and unpushed commits (`↑1`). Double-click to open or focus a ticket; right-click for the rest. |
 | Toolbar, next to the project name | `klant-x / LOGIN-42 ▾`: a searchable list of every ticket, plus New Ticket and New Workspace. |
-| Tools › Workspaces, or Find Action | Switch Ticket, New Ticket, Finish Ticket, New Workspace, Add Repo. Give **Switch Ticket** a shortcut in Settings › Keymap. |
+| Tools › Workspaces, or Find Action | Switch Ticket, New Ticket, Finish Ticket, New Workspace, Add Repo, Undo Workspace. Give **Switch Ticket** a shortcut in Settings › Keymap. |
 
 **New ticket.** The branch comes from the workspace's pattern (`feature/{ticket}`) and can be edited. The ticket
 may contain `/`: `LOGIN-42/login-form` gives branch `feature/LOGIN-42/login-form`, folder `LOGIN-42-login-form/` and
@@ -114,6 +119,13 @@ Run `composer install` / `npm ci` only when the lock files differ from `main`.
 `git worktree remove` per repo and deletes the folder. A folder that still holds other files (notes, scripts) is
 kept.
 
+**Undo workspace.** Right-click the workspace › *Undo Workspace…* (or Tools › Workspaces) reverses New Workspace:
+its tabs close, every ticket's worktrees are removed (branches and commits stay in the repo), and each repo moves back
+out of `main/`, to where it was adopted from, or next to the workspace as `klant-x-frontend` for a cloned one (a
+single-repo workspace's repo takes the workspace's own path). The links go, and the workspace folder is removed unless
+it still holds files of yours. Nothing is done while a ticket has uncommitted changes. Workspaces made with an older version
+don't know where adopted checkouts came from, so those land next to the workspace too.
+
 **Terminals.** When a ticket (or main) opens for the first time, each repo gets its own terminal tab in its own
 folder (`backend`, `frontend`), so `composer install`, `npm install` and git work like in a single-repo project.
 Right-click a repo in the panel › *Open in Terminal* for another one.
@@ -131,7 +143,7 @@ moves to `<workspace>/main/<repo>` and main opens. *Open as Usual* leaves it alo
 | Open a terminal per repo when a ticket or main opens | on |
 | Offer to put a cloned repo in a workspace (after *Get from VCS*) | on |
 | Link every repo next to its workspace (for Herd and similar tools) | on; switching it off removes the links |
-| New workspaces: location, branch pattern, files to copy | last used folder, `feature/{ticket}`, `.env, .env.local, auth.json, vendor, node_modules` |
+| New workspaces: location, branch pattern, repos, files to copy | last used folder, `feature/{ticket}`, `backend, frontend`, `.env, .env.local, auth.json, vendor, node_modules` |
 | Finish Ticket: delete fully merged branches | on |
 | Refresh git status when PhpStorm gets focus | on |
 

@@ -6,7 +6,10 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -100,34 +103,50 @@ public final class WorkspaceOps {
     }
   }
 
-  /** Clones {@code url} into main/&lt;repoName&gt; and registers it. */
+  /**
+   * Clones {@code url} into main/&lt;repoName&gt; and registers it. With {@code repoName} null it becomes the
+   * workspace's only repo, cloned into main/ itself.
+   */
   public void addRepoByClone(Workspace ws, String repoName, String url, Log log) throws IOException, GitException {
-    Path target = checkNewRepoTarget(ws, repoName);
+    Path target = newRepoTarget(ws, repoName);
+    String key = repoName == null ? ws.getName() : repoName;
     log.step("Cloning " + url);
-    Files.createDirectories(ws.mainDir());
-    git.run(ws.mainDir(), CLONE_TIMEOUT, "clone", "--", url, repoName).orThrow("git clone failed");
-    registerRepo(ws, repoName, target, url);
-    if (options.links()) Links.create(ws.ticket(Workspace.MAIN), repoName, log);
+    Files.createDirectories(target.getParent());
+    git.run(target.getParent(), CLONE_TIMEOUT, "clone", "--", url, target.getFileName().toString())
+        .orThrow("git clone failed");
+    registerRepo(ws, key, target, url, null);
+    if (options.links()) Links.create(ws.ticket(Workspace.MAIN), key, log);
   }
 
   /**
-   * Moves an existing checkout into main/&lt;repoName&gt; and registers it.
-   * Runs {@code git worktree repair} so worktrees made earlier keep working.
+   * Moves an existing checkout into main/&lt;repoName&gt; (main/ itself with {@code repoName} null, see
+   * {@link #addRepoByClone}) and registers it. Runs {@code git worktree repair} so worktrees made earlier keep working.
    */
   public void adoptRepo(Workspace ws, String repoName, Path existing, Log log) throws IOException, GitException {
+    adoptRepo(ws, repoName, existing, existing, log);
+  }
+
+  /**
+   * As {@link #adoptRepo(Workspace, String, Path, Log)}, for a checkout that was first moved aside
+   * ({@link #moveAsideForWorkspace}): {@code cameFrom} is its original path, saved for Undo Workspace.
+   */
+  public void adoptRepo(Workspace ws, String repoName, Path existing, Path cameFrom, Log log)
+      throws IOException, GitException {
     Path source = existing.toAbsolutePath().normalize();
     checkAdoptable(source);
-    Path target = checkNewRepoTarget(ws, repoName);
+    Path target = newRepoTarget(ws, repoName);
+    String key = repoName == null ? ws.getName() : repoName;
     if (target.startsWith(source)) throw new IOException("Can't move a folder into itself");
     log.step("Moving " + source.getFileName() + " to " + ws.getRoot().relativize(target));
-    Files.createDirectories(ws.mainDir());
+    Files.createDirectories(target.getParent());
+    if (repoName == null && Files.isDirectory(target)) Files.delete(target); // the empty main/ (checked above)
     Files.move(source, target);
     GitRunner.Result repair = git.run(target, "worktree", "repair");
     if (!repair.ok()) log.warn("git worktree repair: " + repair.message());
     GitRunner.Result origin = git.run(target, "remote", "get-url", "origin");
-    registerRepo(ws, repoName, target, origin.ok() ? origin.out() : null);
+    registerRepo(ws, key, target, origin.ok() ? origin.out() : null, cameFrom.toAbsolutePath().normalize());
     // usually lands on the old path (klant-x-backend), so tools that knew it keep working
-    if (options.links()) Links.create(ws.ticket(Workspace.MAIN), repoName, log);
+    if (options.links()) Links.create(ws.ticket(Workspace.MAIN), key, log);
   }
 
   private static void checkAdoptable(Path source) throws IOException {
@@ -143,7 +162,17 @@ public final class WorkspaceOps {
     }
   }
 
-  private Path checkNewRepoTarget(Workspace ws, String repoName) throws IOException {
+  /** main/&lt;repoName&gt;, or main/ itself for a workspace's only repo ({@code repoName} null), which must be empty. */
+  private Path newRepoTarget(Workspace ws, String repoName) throws IOException {
+    if (repoName == null) {
+      if (Files.exists(ws.mainDir()) && !isEmptyDir(ws.mainDir())) {
+        throw new IOException("main/ is not empty; give the repo a name to put it in main/<name>");
+      }
+      return ws.mainDir();
+    }
+    if (ws.isSingleRepo()) {
+      throw new IOException(ws.getName() + " has its one repo in main/ itself; other repos can't be added to it");
+    }
     if (!Workspace.isValidName(repoName)) throw new IOException("Invalid repo name: " + repoName);
     Path target = ws.mainDir().resolve(repoName);
     if (Files.exists(target)) throw new IOException(ws.getRoot().relativize(target) + " already exists");
@@ -163,7 +192,8 @@ public final class WorkspaceOps {
   }
 
   /** Re-reads .workspace.json right before writing, so edits made meanwhile are kept. */
-  private void registerRepo(Workspace ws, String repoName, Path checkout, String url) throws IOException {
+  private void registerRepo(Workspace ws, String repoName, Path checkout, String url, Path adoptedFrom)
+      throws IOException {
     String base = detectDefaultBranch(checkout);
     synchronized (CONFIG_LOCK) {
       WorkspaceConfig onDisk = Files.isRegularFile(ws.configFile()) ? WorkspaceConfig.load(ws.configFile()) : ws.getConfig();
@@ -173,6 +203,7 @@ public final class WorkspaceOps {
         return fresh;
       });
       rc.setUrl(url);
+      if (adoptedFrom != null) rc.setAdoptedFrom(adoptedFrom.toString());
       if (rc.getBaseBranch() == null) rc.setBaseBranch(base);
       onDisk.save(ws.configFile());
       ws.getConfig().getRepos().put(repoName, rc);
@@ -256,10 +287,14 @@ public final class WorkspaceOps {
   /** Adds a worktree for {@code repo} to an existing ticket (also used to extend a ticket later). */
   public void addWorktree(Workspace ws, Ticket ticket, String repo, String branch, String baseBranch, Log log)
       throws GitException, IOException {
-    Path mainRepo = ws.mainDir().resolve(repo);
-    if (!Ticket.isGitDir(mainRepo)) throw new GitException("main/" + repo + " is not a git checkout");
-    Path target = ticket.getDir().resolve(repo);
-    if (Files.exists(target)) throw new GitException(ws.getRoot().relativize(target) + " already exists");
+    Path mainRepo = ws.mainRepoDir(repo);
+    if (!Ticket.isGitDir(mainRepo)) throw new GitException(ws.getRoot().relativize(mainRepo) + " is not a git checkout");
+    Path target = ws.repoDir(ticket.getName(), repo);
+    // a single-repo ticket is the worktree itself: its folder exists, but must still be empty
+    boolean emptyTicketDir = target.equals(ticket.getDir()) && isEmptyDir(target);
+    if (Files.exists(target) && !emptyTicketDir) {
+      throw new GitException(ws.getRoot().relativize(target) + " already exists");
+    }
 
     String base = baseBranch == null || baseBranch.isBlank() ? configuredBase(ws, repo, mainRepo) : baseBranch.trim();
     String baseRemote = null;
@@ -419,7 +454,9 @@ public final class WorkspaceOps {
       if (st.changed() > 0) problems.add(new Problem(r.name(), st.changed() + " uncommitted change(s)"));
       if (st.unpushed() > 0) problems.add(new Problem(r.name(), st.unpushed() + " commit(s) not pushed to any remote"));
     }
-    List<String> other = leftovers(ticket, worktrees.stream().map(TicketRepo::name).toList());
+    // a single-repo ticket folder is the worktree: everything in it is the repo's
+    List<String> other = ticket.getWorkspace().isSingleRepo() ? List.of()
+        : leftovers(ticket, worktrees.stream().map(TicketRepo::name).toList());
     if (!other.isEmpty()) {
       problems.add(new Problem("folder", "also contains " + String.join(", ", other) + " (the folder will be kept)"));
     }
@@ -483,9 +520,11 @@ public final class WorkspaceOps {
     boolean allRemoved = true;
     for (int i = 0; i < worktrees.size(); i++) {
       TicketRepo r = worktrees.get(i);
-      Path mainRepo = ws.mainDir().resolve(r.name());
+      Path mainRepo = ws.mainRepoDir(r.name());
       String branch = statuses.get(i).branch();
       log.step(r.name() + ": removing worktree");
+      // untracked IDE metadata isn't work (RepoStatus skips it too), but would make git refuse the removal
+      git.run(r.dir(), "clean", "-f", "-d", "-q", "--", ".idea", ".DS_Store", "*/.DS_Store");
       List<String> args = new ArrayList<>(List.of("worktree", "remove"));
       if (force) args.add("--force");
       args.add(r.dir().toString());
@@ -511,7 +550,7 @@ public final class WorkspaceOps {
     if (!allRemoved) return new FinishResult(false, messages);
 
     for (String repo : ws.getConfig().getRepos().keySet()) {
-      Path mainRepo = ws.mainDir().resolve(repo);
+      Path mainRepo = ws.mainRepoDir(repo);
       if (Ticket.isGitDir(mainRepo)) git.run(mainRepo, "worktree", "prune");
     }
     // only delete when nothing but IDE metadata is left: never someone's notes or a non-ticket folder
@@ -528,6 +567,140 @@ public final class WorkspaceOps {
       messages.add("Could not update " + WorkspaceConfig.FILE_NAME + ": " + e.getMessage());
     }
     return new FinishResult(true, messages);
+  }
+
+  // ------------------------------------------------------------------ undo
+
+  /** Result of undoing a workspace: where each repo is now, and whether the workspace folder is gone. */
+  public record UndoResult(Map<String, Path> repos, boolean folderRemoved, List<String> messages) {}
+
+  /** What stops Undo Workspace: uncommitted work (or a git error) in a ticket's worktree. Unpushed commits don't. */
+  public List<Problem> checkBeforeUndo(Workspace ws) {
+    List<Problem> problems = new ArrayList<>();
+    for (Ticket t : ws.tickets()) {
+      if (t.isMain()) continue;
+      for (TicketRepo r : t.repos()) {
+        if (r.kind() != TicketRepo.Kind.WORKTREE) continue;
+        String where = ws.isSingleRepo() ? t.getName() : t.getName() + "/" + r.name();
+        RepoStatus st = RepoStatus.read(git, r.dir());
+        if (st.error() != null) problems.add(new Problem(where, "git error: " + st.error()));
+        else if (st.changed() > 0) problems.add(new Problem(where, st.changed() + " uncommitted change(s)"));
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * Reverses New Workspace. Removes every ticket's worktrees (their branches and commits stay in the repo), moves
+   * each repo out of main/ to where it was adopted from, else next to the workspace as &lt;workspace&gt;-&lt;repo&gt;
+   * (a single-repo workspace's repo takes the workspace's own path), removes the links, and deletes the workspace
+   * folder unless something else is left in it. Never deletes a repo; refuses while a ticket has uncommitted work.
+   */
+  public UndoResult undoWorkspace(Workspace workspace, Log log) throws IOException {
+    Workspace ws = Workspace.load(workspace.getRoot());
+    List<Problem> problems = checkBeforeUndo(ws);
+    if (!problems.isEmpty()) {
+      throw new IOException("Commit or discard these changes first:\n"
+          + String.join("\n", problems.stream().map(p -> p.repo() + ": " + p.text()).toList()));
+    }
+    Path root = ws.getRoot();
+    Path parent = root.getParent();
+    if (parent == null) throw new IOException("The workspace has no parent folder");
+    List<String> messages = new ArrayList<>();
+
+    // tickets first: main/'s repos only move once no worktree points at them
+    for (Ticket t : ws.tickets()) {
+      if (t.isMain()) continue;
+      FinishResult fr = finishTicket(t, false, false, log);
+      fr.messages().forEach(m -> messages.add(t.getName() + ": " + m));
+      if (t.repos().stream().anyMatch(r -> r.kind() == TicketRepo.Kind.WORKTREE)) {
+        throw new IOException(t.getName() + ": not every worktree could be removed, nothing was moved out of main/\n"
+            + String.join("\n", fr.messages()));
+      }
+    }
+    Links.removeAll(ws, log).forEach(l -> messages.add("Removed link " + l));
+
+    boolean single = ws.isSingleRepo();
+    Map<String, Path> now = new LinkedHashMap<>();
+    Map<String, Path> later = new LinkedHashMap<>(); // destinations inside the workspace folder: once it's gone
+    for (TicketRepo r : ws.ticket(Workspace.MAIN).repos()) {
+      if (r.kind() != TicketRepo.Kind.CLONE) continue;
+      Path dest = restorePath(ws, r.name(), single);
+      boolean inside = dest.startsWith(root);
+      Path to = free(inside ? parent.resolve(root.getFileName() + ".undo-" + r.name()) : dest);
+      log.step("Moving " + root.relativize(r.dir()) + " to " + to);
+      Files.move(r.dir(), to);
+      git.run(to, "worktree", "prune");
+      now.put(r.name(), to);
+      if (inside) later.put(r.name(), dest);
+    }
+
+    // the workspace folder: its config and main/'s IDE files go, anything else is kept
+    Files.deleteIfExists(ws.configFile());
+    if (Set.of(".idea", ".DS_Store").containsAll(entries(ws.mainDir()))) FileCloner.deleteRecursively(ws.mainDir());
+    List<String> left = entries(root).stream().filter(n -> !n.equals(".DS_Store")).toList();
+    boolean removed = left.isEmpty();
+    if (removed) {
+      log.step("Removing " + root);
+      FileCloner.deleteRecursively(root);
+    } else {
+      messages.add("Kept " + root + " because it still contains " + String.join(", ", left));
+    }
+
+    for (Map.Entry<String, Path> e : later.entrySet()) {
+      Path dest = e.getValue();
+      // taken (the workspace folder was kept): klant-x-backend, or klant-x-2 for a single repo
+      Path to = Files.exists(dest, LinkOption.NOFOLLOW_LINKS) ? free(fallbackPath(ws, e.getKey(), single)) : dest;
+      Files.move(now.get(e.getKey()), to);
+      now.put(e.getKey(), to);
+    }
+    now.forEach((repo, p) -> messages.add(repo + " is now " + p));
+    return new UndoResult(now, removed, messages);
+  }
+
+  /** Where Undo Workspace means to put each repo of main/ (a taken name then gets -2, -3, ...). */
+  public static Map<String, Path> undoDestinations(Workspace ws) {
+    boolean single = ws.isSingleRepo();
+    Map<String, Path> out = new LinkedHashMap<>();
+    for (TicketRepo r : ws.ticket(Workspace.MAIN).repos()) {
+      if (r.kind() == TicketRepo.Kind.CLONE) out.put(r.name(), restorePath(ws, r.name(), single));
+    }
+    return out;
+  }
+
+  /** Where a repo goes back to: the folder it was adopted from (if its parent still exists), else the fallback. */
+  private static Path restorePath(Workspace ws, String repo, boolean single) {
+    WorkspaceConfig.RepoConfig rc = ws.getConfig().getRepos().get(repo);
+    if (rc != null && rc.getAdoptedFrom() != null) {
+      try {
+        Path p = Path.of(rc.getAdoptedFrom()).toAbsolutePath().normalize();
+        if (p.getParent() != null && Files.isDirectory(p.getParent()) && !p.startsWith(ws.mainDir())) return p;
+      } catch (RuntimeException ignored) {
+        // not a usable path: fall back
+      }
+    }
+    return fallbackPath(ws, repo, single);
+  }
+
+  /** klant-x-backend next to the workspace; a single-repo workspace's repo takes the workspace's own path. */
+  private static Path fallbackPath(Workspace ws, String repo, boolean single) {
+    return ws.getRoot().resolveSibling(single ? ws.getRoot().getFileName().toString() : ws.getName() + "-" + repo);
+  }
+
+  /** {@code p}, or p-2, p-3, ... when something (even a dangling link) is there already. */
+  private static Path free(Path p) {
+    Path candidate = p;
+    for (int i = 2; Files.exists(candidate, LinkOption.NOFOLLOW_LINKS); i++) {
+      candidate = p.resolveSibling(p.getFileName() + "-" + i);
+    }
+    return candidate;
+  }
+
+  private static List<String> entries(Path dir) throws IOException {
+    if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) return List.of();
+    try (Stream<Path> s = Files.list(dir)) {
+      return s.map(p -> p.getFileName().toString()).sorted().toList();
+    }
   }
 
   private static boolean existsIgnoreCase(Path parent, String name) {

@@ -134,8 +134,8 @@ public final class IdeaFiles {
     b.append("  <component name=\"VcsDirectoryMappings\">\n");
     for (TicketRepo r : ticket.repos()) {
       if (r.kind() == TicketRepo.Kind.MISSING) continue;
-      String dir = r.kind() == TicketRepo.Kind.ATTACHED
-          ? "$PROJECT_DIR$/../" + Workspace.MAIN + "/" + r.name()
+      String dir = r.kind() == TicketRepo.Kind.ATTACHED ? "$PROJECT_DIR$/../" + Workspace.MAIN + "/" + r.name()
+          : r.dir().equals(ticket.getDir()) ? "$PROJECT_DIR$" // single-repo workspace
           : "$PROJECT_DIR$/" + r.name();
       b.append("    <mapping directory=\"").append(xmlAttr(dir)).append("\" vcs=\"Git\" />\n");
     }

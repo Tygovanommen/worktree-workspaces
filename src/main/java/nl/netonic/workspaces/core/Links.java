@@ -14,6 +14,7 @@ import java.util.stream.Stream;
  * <pre>
  *   ~/PhpstormProjects/klant-x-backend           -> klant-x/main/backend
  *   ~/PhpstormProjects/klant-x-login-42-backend  -> klant-x/LOGIN-42/backend
+ *   ~/PhpstormProjects/klant-x-login-42          -> klant-x/LOGIN-42          (single-repo workspace)
  * </pre>
  * Never replaces anything that is already there; only removes links into a finished ticket, or links of this
  * workspace whose target is gone.
@@ -26,9 +27,13 @@ public final class Links {
     return ws.getRoot().getParent();
   }
 
-  /** klant-x-backend for main, klant-x-login-42-backend for a ticket: lowercase letters, digits and '-' (a valid host name). */
+  /**
+   * klant-x-backend for main, klant-x-login-42-backend for a ticket: lowercase letters, digits and '-' (a valid host
+   * name). A single-repo workspace has no repo folders: klant-x-main, klant-x-login-42.
+   */
   public static String name(Ticket ticket, String repo) {
     String ws = ticket.getWorkspace().getName();
+    if (ticket.getWorkspace().isSingleRepo()) return clean(ws + "-" + ticket.getName());
     return clean(ticket.isMain() ? ws + "-" + repo : ws + "-" + ticket.getName() + "-" + repo);
   }
 
@@ -40,7 +45,7 @@ public final class Links {
   /** Links {@code <ticket>/<repo>}; returns the link's name, or null when it was already there or couldn't be made. */
   public static String create(Ticket ticket, String repo, WorkspaceOps.Log log) {
     Path parent = dir(ticket.getWorkspace());
-    Path target = ticket.getDir().resolve(repo).toAbsolutePath().normalize();
+    Path target = ticket.getWorkspace().repoDir(ticket.getName(), repo).toAbsolutePath().normalize();
     if (parent == null || !Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) return null;
     Path link = parent.resolve(name(ticket, repo));
     try {

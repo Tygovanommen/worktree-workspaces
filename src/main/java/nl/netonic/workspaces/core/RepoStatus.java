@@ -11,7 +11,7 @@ import java.time.Duration;
  * @param upstream  tracking branch or null
  * @param ahead     commits ahead of upstream (0 without upstream)
  * @param behind    commits behind upstream (0 without upstream)
- * @param changed   modified + staged + untracked files
+ * @param changed   modified + staged + untracked files, not counting untracked IDE metadata ({@link #isMetadata})
  * @param unpushed  commits that exist on no remote at all
  * @param error     non-null when git failed
  */
@@ -67,11 +67,18 @@ public record RepoStatus(String branch, String upstream, int ahead, int behind, 
             // ignore
           }
         }
+      } else if (line.startsWith("? ") && isMetadata(line.substring(2))) {
+        // not work: a single-repo ticket's .idea lives inside the worktree
       } else if (!line.startsWith("#") && !line.startsWith("!")) {
         changed++;
       }
     }
     return new RepoStatus(branch, upstream, ahead, behind, changed, 0, null);
+  }
+
+  /** Untracked paths that are not work: the .idea folder at the root and Finder's .DS_Store files. */
+  static boolean isMetadata(String path) {
+    return path.equals(".idea/") || path.startsWith(".idea/") || path.equals(".DS_Store") || path.endsWith("/.DS_Store");
   }
 
   /** Short label for the tree: "3 changed  ↑1", "clean", ... */

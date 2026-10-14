@@ -32,6 +32,8 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     /** Empty: the folder used last, else ~/PhpstormProjects. */
     public String defaultWorkspaceFolder = "";
     public String defaultBranchPattern = WorkspaceConfig.DEFAULT_BRANCH_PATTERN;
+    /** Repo rows New Workspace starts with, comma separated; empty: one row without a name. */
+    public String defaultRepos = DEFAULT_REPOS;
     public String defaultCopy = String.join(", ", WorkspaceConfig.DEFAULT_COPY);
     public boolean deleteMergedBranches = true;
     public boolean refreshOnFocus = true;
@@ -39,6 +41,7 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     public int ticketsCreated = 0;
   }
 
+  public static final String DEFAULT_REPOS = "backend, frontend";
   public static final String CLONE_ASK = "ask";
   public static final String CLONE_NEVER = "never";
 
@@ -107,6 +110,18 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
   public String defaultBranchPattern() {
     String p = state.defaultBranchPattern;
     return p == null || !p.contains("{ticket}") ? WorkspaceConfig.DEFAULT_BRANCH_PATTERN : p.trim();
+  }
+
+  /** The repo names New Workspace starts with: valid names from {@code defaultRepos}, in order. */
+  public List<String> defaultRepoNames() {
+    return parseRepoNames(state.defaultRepos);
+  }
+
+  /** "backend, frontend" → [backend, frontend]; invalid names and repeats are dropped. */
+  public static List<String> parseRepoNames(String text) {
+    if (text == null) return List.of();
+    return Arrays.stream(text.split("[,\\n]")).map(String::trim)
+        .filter(n -> Workspace.isValidName(n) && !n.equalsIgnoreCase(Workspace.MAIN)).distinct().toList();
   }
 
   /** "a, b ,c" → [a, b, c]; entries with ".." or an absolute path are dropped (they're relative to the repo). */

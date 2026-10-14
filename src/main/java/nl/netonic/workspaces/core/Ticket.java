@@ -36,6 +36,11 @@ public final class Ticket {
    * Repos found on disk but missing from the config are listed too.
    */
   public List<TicketRepo> repos() {
+    if (workspace.isSingleRepo()) {
+      Path dir = getDir();
+      TicketRepo.Kind kind = isMain() ? TicketRepo.Kind.CLONE : isGitDir(dir) ? TicketRepo.Kind.WORKTREE : TicketRepo.Kind.MISSING;
+      return List.of(new TicketRepo(workspace.singleRepoName(), dir, kind));
+    }
     Set<String> names = new LinkedHashSet<>(workspace.getConfig().getRepos().keySet());
     names.addAll(gitFoldersIn(getDir()));
     if (!isMain()) names.addAll(gitFoldersIn(workspace.mainDir()));

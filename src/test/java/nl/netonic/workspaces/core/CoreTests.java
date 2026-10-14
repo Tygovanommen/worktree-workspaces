@@ -28,6 +28,9 @@ public final class CoreTests {
     test("options: links off, default copy list; clone name suggestions", CoreTests::optionsAndCloneNames);
     test("delete never follows symlinks", CoreTests::deleteKeepsLinkTargets);
     test("workspace named like the checkout it adopts", CoreTests::workspaceNamedLikeCheckout);
+    test("single-repo workspace: the repo is main/ itself", CoreTests::singleRepoWorkspace);
+    test("undo workspace: repos back out, workspace gone", CoreTests::undoWorkspace);
+    test("undo single-repo workspace named like its checkout", CoreTests::undoSingleRepoWorkspace);
 
     System.out.println();
     System.out.println(passed + " passed, " + failed.size() + " failed");
@@ -136,12 +139,15 @@ public final class CoreTests {
         # branch.ab +2 -1
         1 .M N... 100644 100644 100644 a b file.txt
         ? new.txt
+        ? .idea/
+        ? .DS_Store
+        ? sub/.DS_Store
         """);
     eq("feature/X", s.branch(), "branch");
     eq("origin/feature/X", s.upstream(), "upstream");
     eq(2, s.ahead(), "ahead");
     eq(1, s.behind(), "behind");
-    eq(2, s.changed(), "changed");
+    eq(2, s.changed(), "changed, untracked .idea and .DS_Store not counted");
   }
 
   static void fullFlow() throws Exception {
@@ -379,6 +385,172 @@ public final class CoreTests {
     check(Files.isRegularFile(ws.mainDir().resolve("frontend/index.php")), "checkout in main/frontend");
     check(!Files.exists(aside, LinkOption.NOFOLLOW_LINKS), "nothing left aside");
     eq(name, tmp.toRealPath().resolve(name).toRealPath().getFileName().toString(), "workspace folder has the new name");
+  }
+
+  static void singleRepoWorkspace() throws Exception {
+    Path tmp = Files.createTempDirectory("single");
+    GitRunner git = GitRunner.fromSystem();
+    WorkspaceOps ops = new WorkspaceOps(git);
+    Path remote = bareRepoWithCommit(git, tmp, "remote-solo", "main");
+
+    Workspace ws = ops.createWorkspace(tmp, "solo");
+    check(!ws.isSingleRepo(), "empty workspace is not single-repo yet");
+    ops.addRepoByClone(ws, null, remote.toString(), WorkspaceOps.Log.NONE);
+    ws = Workspace.load(ws.getRoot());
+    check(ws.isSingleRepo(), "main/ is the clone");
+    check(Files.isRegularFile(ws.mainDir().resolve("README.md")), "no repo subfolder in main/");
+    eq(List.of("solo"), List.copyOf(ws.getConfig().getRepos().keySet()), "registered under the workspace's name");
+    eq("main", ws.getConfig().getRepos().get("solo").getBaseBranch(), "base branch detected");
+    eq(List.of(new TicketRepo("solo", ws.mainDir(), TicketRepo.Kind.CLONE)), ws.ticket(Workspace.MAIN).repos(), "main");
+    eq(ws.mainDir(), Links.resolve(tmp.resolve("solo-main")), "main linked as solo-main");
+    try {
+      ops.addRepoByClone(ws, "other", remote.toString(), WorkspaceOps.Log.NONE);
+      throw new AssertionError("second repo added to a single-repo workspace");
+    } catch (IOException expected) {
+      // ok
+    }
+
+    Files.writeString(ws.mainDir().resolve(".env"), "APP_ENV=local\n");
+    Ticket t = ops.createTicket(ws, "T-1", "feature/T-1",
+        List.of(new WorkspaceOps.RepoChoice("solo", true, null)), WorkspaceOps.Log.NONE);
+    check(Files.isRegularFile(t.getDir().resolve(".git")), "ticket folder is the worktree");
+    check(Files.isRegularFile(t.getDir().resolve(".env")), ".env copied");
+    eq(List.of(new TicketRepo("solo", t.getDir(), TicketRepo.Kind.WORKTREE)), t.repos(), "ticket repos");
+    eq(List.of("main", "T-1"), ws.tickets().stream().map(Ticket::getName).toList(), "tickets");
+    check(Files.readString(t.getDir().resolve(".idea/vcs.xml")).contains("directory=\"$PROJECT_DIR$\""), "vcs root");
+    eq(t.getDir(), Links.resolve(tmp.resolve("solo-t-1")), "ticket linked as solo-t-1");
+    eq("feature/T-1", RepoStatus.read(git, t.getDir()).branch(), "on the ticket branch");
+    eq(0, RepoStatus.read(git, t.getDir()).changed(), "untracked .idea is not a change");
+    eq(List.of(), ops.checkBeforeFinish(t), "nothing in the way of finishing");
+
+    WorkspaceOps.FinishResult r = ops.finishTicket(t, false, true, WorkspaceOps.Log.NONE);
+    check(r.folderRemoved(), "ticket removed: " + r.messages());
+    check(!Files.exists(t.getDir()), "ticket folder gone");
+    check(!Files.exists(tmp.resolve("solo-t-1"), LinkOption.NOFOLLOW_LINKS), "ticket link gone");
+    check(Files.isRegularFile(ws.mainDir().resolve("README.md")), "main untouched");
+
+    // uncommitted work still blocks Finish
+    Ticket t2 = ops.createTicket(ws, "T-2", "feature/T-2",
+        List.of(new WorkspaceOps.RepoChoice("solo", true, null)), WorkspaceOps.Log.NONE);
+    Files.writeString(t2.getDir().resolve("work.php"), "<?php\n");
+    check(!ops.finishTicket(t2, false, true, WorkspaceOps.Log.NONE).folderRemoved(), "dirty ticket kept");
+    check(Files.isRegularFile(t2.getDir().resolve("work.php")), "work kept");
+
+    // an existing checkout as the only repo
+    Path checkout = tmp.resolve("solo2-checkout");
+    git.run(tmp, "clone", "-q", remote.toString(), checkout.toString()).orThrow("clone");
+    Workspace ws2 = ops.createWorkspace(tmp, "solo2");
+    ops.adoptRepo(ws2, null, checkout, WorkspaceOps.Log.NONE);
+    check(Workspace.load(ws2.getRoot()).isSingleRepo(), "adopted checkout is main/");
+
+    // a workspace that already has a repo in main/<name> can't take one in main/ itself
+    Workspace ws3 = ops.createWorkspace(tmp, "multi");
+    ops.addRepoByClone(ws3, "api", remote.toString(), WorkspaceOps.Log.NONE);
+    try {
+      ops.addRepoByClone(ws3, null, remote.toString(), WorkspaceOps.Log.NONE);
+      throw new AssertionError("repo cloned into a non-empty main/");
+    } catch (IOException expected) {
+      // ok
+    }
+    check(!ws3.isSingleRepo(), "multi stays multi");
+  }
+
+  static void undoWorkspace() throws Exception {
+    Path tmp = Files.createTempDirectory("undo");
+    GitRunner git = GitRunner.fromSystem();
+    WorkspaceOps ops = new WorkspaceOps(git);
+    Path remoteBackend = bareRepoWithCommit(git, tmp, "remote-backend", "main");
+    Path remoteFrontend = bareRepoWithCommit(git, tmp, "remote-frontend", "main");
+    Path projects = Files.createDirectories(tmp.resolve("projects"));
+    Path existing = projects.resolve("old-backend");
+    git.run(tmp, "clone", "-q", remoteBackend.toString(), existing.toString()).orThrow("clone");
+
+    Workspace ws = ops.createWorkspace(projects, "kx");
+    ops.adoptRepo(ws, "backend", existing, WorkspaceOps.Log.NONE);
+    ops.addRepoByClone(ws, "frontend", remoteFrontend.toString(), WorkspaceOps.Log.NONE);
+    ws = Workspace.load(ws.getRoot());
+    eq(existing.toString(), ws.getConfig().getRepos().get("backend").getAdoptedFrom(), "adopted path saved");
+    eq(existing.toString(), WorkspaceConfig.load(ws.configFile()).getRepos().get("backend").getAdoptedFrom(),
+        "adopted path on disk");
+    eq(Map.of("backend", existing, "frontend", projects.resolve("kx-frontend")), WorkspaceOps.undoDestinations(ws),
+        "destinations");
+
+    List<WorkspaceOps.RepoChoice> both = List.of(new WorkspaceOps.RepoChoice("backend", true, null),
+        new WorkspaceOps.RepoChoice("frontend", true, null));
+    Ticket a = ops.createTicket(ws, "A-1", "feature/A-1", both, WorkspaceOps.Log.NONE);
+    // an unpushed commit: the branch must survive the undo
+    Files.writeString(a.getDir().resolve("backend/a.php"), "<?php\n");
+    git.run(a.getDir().resolve("backend"), "add", ".").orThrow("add");
+    git.run(a.getDir().resolve("backend"), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "a")
+        .orThrow("commit");
+    Ticket b = ops.createTicket(ws, "B-2", "feature/B-2", both.subList(1, 2), WorkspaceOps.Log.NONE);
+    Files.writeString(b.getDir().resolve("frontend/wip.js"), "x\n");
+
+    eq(1, ops.checkBeforeUndo(ws).size(), "uncommitted work found");
+    try {
+      ops.undoWorkspace(ws, WorkspaceOps.Log.NONE);
+      throw new AssertionError("undone with uncommitted work");
+    } catch (IOException expected) {
+      // ok
+    }
+    check(Files.isRegularFile(b.getDir().resolve("frontend/wip.js")), "nothing touched");
+    check(Ticket.isGitDir(ws.mainDir().resolve("backend")), "main untouched");
+    Files.delete(b.getDir().resolve("frontend/wip.js"));
+
+    WorkspaceOps.UndoResult r = ops.undoWorkspace(ws, WorkspaceOps.Log.NONE);
+    check(r.folderRemoved(), "workspace folder removed: " + r.messages());
+    check(!Files.exists(ws.getRoot()), "kx/ gone");
+    eq(existing, r.repos().get("backend"), "backend back where it came from");
+    check(Ticket.isGitDir(existing) && Files.isDirectory(existing.resolve(".git")), "backend is a plain clone again");
+    eq(projects.resolve("kx-frontend"), r.repos().get("frontend"), "frontend next to where the workspace was");
+    check(git.run(existing, "show-ref", "--verify", "--quiet", "refs/heads/feature/A-1").ok(), "ticket branch kept");
+    eq(1L, git.run(existing, "worktree", "list", "--porcelain").out().lines().filter(l -> l.startsWith("worktree "))
+        .count(), "no worktrees left besides the clone itself");
+    try (var left = Files.list(projects)) {
+      eq(List.of("kx-frontend", "old-backend"), left.map(p -> p.getFileName().toString()).sorted().toList(),
+          "no links or leftovers next to it");
+    }
+  }
+
+  static void undoSingleRepoWorkspace() throws Exception {
+    Path tmp = Files.createTempDirectory("undo1");
+    GitRunner git = GitRunner.fromSystem();
+    WorkspaceOps ops = new WorkspaceOps(git);
+    Path remote = bareRepoWithCommit(git, tmp, "remote", "main");
+    Path projects = Files.createDirectories(tmp.resolve("projects"));
+    Path checkout = projects.resolve("samey");
+    git.run(tmp, "clone", "-q", remote.toString(), checkout.toString()).orThrow("clone");
+
+    // as New Workspace does it: the checkout is in the way of the workspace folder
+    Path aside = ops.moveAsideForWorkspace(projects, "samey", checkout, WorkspaceOps.Log.NONE);
+    Workspace ws = ops.createWorkspace(projects, "samey");
+    ops.adoptRepo(ws, null, aside, checkout, WorkspaceOps.Log.NONE);
+    ws = Workspace.load(ws.getRoot());
+    check(ws.isSingleRepo(), "single");
+    ops.createTicket(ws, "T-1", "feature/T-1", List.of(new WorkspaceOps.RepoChoice("samey", true, null)),
+        WorkspaceOps.Log.NONE);
+
+    WorkspaceOps.UndoResult r = ops.undoWorkspace(ws, WorkspaceOps.Log.NONE);
+    check(r.folderRemoved(), "removed: " + r.messages());
+    eq(checkout, r.repos().get("samey"), "back at its own path");
+    check(Files.isDirectory(checkout.resolve(".git")) && Files.isRegularFile(checkout.resolve("README.md")),
+        "a plain checkout again");
+    check(!Workspace.isWorkspaceRoot(checkout), "no .workspace.json");
+    try (var left = Files.list(projects)) {
+      eq(List.of("samey"), left.map(p -> p.getFileName().toString()).toList(), "nothing else left");
+    }
+
+    // a file of the user's in the workspace folder: the folder stays, the repo goes next to it
+    Path c2 = projects.resolve("other");
+    git.run(tmp, "clone", "-q", remote.toString(), c2.toString()).orThrow("clone");
+    Workspace w2 = ops.createWorkspace(projects, "w2");
+    ops.adoptRepo(w2, null, c2, WorkspaceOps.Log.NONE);
+    Files.writeString(w2.getRoot().resolve("notes.md"), "mine\n");
+    WorkspaceOps.UndoResult r2 = ops.undoWorkspace(Workspace.load(w2.getRoot()), WorkspaceOps.Log.NONE);
+    check(!r2.folderRemoved(), "folder kept");
+    check(Files.isRegularFile(w2.getRoot().resolve("notes.md")), "notes kept");
+    check(!Workspace.isWorkspaceRoot(w2.getRoot()), "no longer a workspace");
+    eq(c2, r2.repos().get("w2"), "adopted repo back at its path");
   }
 
   static void slashKeysAndBases() throws Exception {

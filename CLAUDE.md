@@ -6,7 +6,7 @@ Claude sessions: `docs/PERFORMANCE.md`.
 
 ## Status (14 Oct 2026)
 
-- Version 0.2.1, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
+- Version 0.2.2, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
   Distributed via GitHub Releases + `updatePlugins.xml` (custom plugin repository), not the Marketplace.
 - Verified: compiles against PhpStorm 2026.2.3 (build 262.10968.76) jars; `CoreTests` pass on real git repos;
   `tools/api-check.sh` reports no internal / experimental / deprecated API use and no missing members; every
@@ -25,6 +25,12 @@ Claude sessions: `docs/PERFORMANCE.md`.
     .idea/                   copied from main/.idea minus workspace.xml etc.; .name = "klant-x · TICKET"
     <repo>/                  git worktree of main/<repo>; repos the ticket skips are attached from main/
 ```
+
+Single-repo workspace (one repo when created): `main/` is the clone itself (`main/.git`), each `<TICKET>/` is a
+worktree of it with its `.idea/` inside, links are `klant-x-main` / `klant-x-login-42`. Detected from disk
+(`Workspace.isSingleRepo`), not stored; the repo's key in `repos` is the workspace name (`singleRepoName`). Always go
+through `Workspace.repoDir` / `mainRepoDir`, never `<ticket>/<repo>` by hand. Adding a second repo is refused.
+`RepoStatus` ignores untracked `.idea/` and `.DS_Store`, and Finish `git clean`s them before `worktree remove`.
 
 Next to the workspace (its parent, e.g. `~/PhpstormProjects`) the plugin keeps symlinks so tools that only look one
 folder deep (Herd, Valet) find every repo: `klant-x-backend → klant-x/main/backend`,
@@ -45,14 +51,16 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
   - `Workspace`, `Ticket`, `TicketRepo` — folder model; `Ticket.repos()` resolves CLONE / WORKTREE / ATTACHED / MISSING.
   - `GitRunner` — git CLI with `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`, timeouts.
   - `RepoStatus` — porcelain v2 parse + unpushed count (`rev-list HEAD --not --remotes`).
-  - `WorkspaceOps` — create workspace, clone/adopt repo, create ticket / add worktree, finish checks, finish,
+  - `WorkspaceOps` — create workspace, clone/adopt repo (saves `adoptedFrom`), create ticket / add worktree, finish
+    checks, finish, undo workspace (`checkBeforeUndo`, `undoDestinations`, `undoWorkspace`),
     `listBranches`. Base branch: `refs/heads/x` / `refs/remotes/<r>/x` must exist; a plain name is local first, then
     `origin/x`, then HEAD (warning). The base is always fetched; config writes go through `updateConfig` (re-read first).
   - `FileCloner` — `cp -c -R` (APFS clone) → `cp -R` → Java copy; recursive delete that never follows symlinks.
   - `Links` — symlinks next to the workspace (name: lowercase `workspace-[ticket-]repo`, relative target).
   - `IdeaFiles` — prepares a ticket's `.idea` (copy shared settings, module, `.name`, `vcs.xml`, attached content roots).
 - `ide/` — IntelliJ layer.
-  - `WorkspaceSettings` (app state, `worktreeWorkspaces.xml`: workspaces + all options; `opsOptions()` → core's
+  - `WorkspaceSettings` (app state, `worktreeWorkspaces.xml`: workspaces + all options incl. `defaultRepos`, the
+    New Workspace rows; `opsOptions()` → core's
     `WorkspaceOps.Options` for links / default copy list), `WorkspaceModel` (background scan → `TOPIC`, also syncs links).
   - `RepoTerminals` (a terminal tab per repo on a project's first open, flag in `PropertiesComponent`),
     `CloneListener` (`checkoutListener` before `ProjectDirCheckoutListener`: offers to move a fresh clone into a
@@ -95,7 +103,10 @@ tools/api-check.sh     # must end with "problems: none"
   Actions extend `WsAction` (update on BGT).
 - Prefer stable APIs; run `tools/api-check.sh` after every change.
 - Safety, never relax without a test:
-  - nothing ever deletes or moves `main/` (`WorkspaceOps.isProtected`, case-insensitive);
+  - nothing ever deletes or moves `main/` (`WorkspaceOps.isProtected`, case-insensitive), except Undo Workspace,
+    which moves main's repos out (never deletes one) only after every ticket's worktrees are gone, refuses on any
+    uncommitted change, keeps ticket branches, and only deletes the workspace folder when nothing but our files is
+    left (`.workspace.json`, main/'s `.idea`, `.DS_Store`);
   - Finish is all-or-nothing for uncommitted changes unless the user ticks discard;
   - a ticket folder that still has other files after the worktrees are removed is kept;
   - never copy `.idea/workspace.xml` (shared `ProjectId` merges projects);
@@ -140,7 +151,9 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
 1. Install the zip and restart: *Workspaces* tool window on the left, Tools › Workspaces menu, toolbar widget next to
    the project name once a workspace exists.
 2. New Workspace with one git URL and one existing checkout: the checkout is moved, `.workspace.json` has the right
-   `baseBranch`, `main` opens as tab "name · main" with both repos and two Git roots.
+   `baseBranch`, `main` opens as tab "name · main" with both repos and two Git roots. Remove a row (×) down to one:
+   the name field goes away and the repo lands in `main/` itself; a ticket of it is a worktree folder with its own
+   `.idea`, shows clean, and finishes cleanly. Settings › Repos changes the starting rows.
 3. New Ticket with both repos: tab "name · KEY", branches `feature/KEY`, `vendor/` and `node_modules/` present.
    Key `KEY/x`: folder + tab `KEY-x`, branch `feature/KEY/x`, saved under `tickets` in `.workspace.json`.
    *Branch from* lists Local / Remote like the Git branches popup; a local pick is used as-is, a remote one fetched.
@@ -158,3 +171,6 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
     If the tabs are unnamed and the Terminal window pops open, the reflection path failed (see idea.log).
 11. Get from VCS: the dialog appears; New / Add to workspace moves the clone, leaves a link, opens main;
     Open as Usual opens the clone as before.
+12. Undo Workspace (panel: right-click the workspace): a ticket with a changed file blocks it; otherwise the
+    dialog lists where each repo goes, tabs close, repos land there as plain clones (ticket branches still there),
+    links and the workspace folder are gone, and the repos open as projects if you ran it from the workspace's window.

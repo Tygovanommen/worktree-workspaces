@@ -27,7 +27,8 @@ public final class CloneListener implements CheckoutListener {
     // already inside a workspace (cloned into one by hand): leave it alone
     if (WorkspaceSettings.getInstance().workspaceRoots().stream().anyMatch(clone::startsWith)) return false;
 
-    List<Workspace> workspaces = WorkspaceModel.getInstance().snapshot().stream()
+    // a single-repo workspace can't take another repo
+    List<Workspace> workspaces = WorkspaceModel.getInstance().snapshot().stream().filter(v -> !v.singleRepo())
         .map(WorkspaceModel.WorkspaceView::workspace).filter(Objects::nonNull).toList();
     Project reportTo = project.isDefault() ? null : project;
     CloneIntoWorkspaceDialog dialog = new CloneIntoWorkspaceDialog(reportTo, clone, workspaces,
@@ -54,7 +55,7 @@ public final class CloneListener implements CheckoutListener {
         } else {
           ws = Workspace.load(existing.getRoot());
         }
-        ops.adoptRepo(ws, repo, current.get(), log);
+        ops.adoptRepo(ws, repo, current.get(), clone, log);
         return Workspace.load(ws.getRoot());
       } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
         throw e;

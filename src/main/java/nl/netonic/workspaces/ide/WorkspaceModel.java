@@ -37,7 +37,8 @@ public final class WorkspaceModel {
 
   public record TicketView(Ticket ticket, List<RepoView> repos) {}
 
-  public record WorkspaceView(Path root, Workspace workspace, String error, List<TicketView> tickets) {
+  /** {@code singleRepo}: the workspace's one repo is main/ itself ({@link Workspace#isSingleRepo()}). */
+  public record WorkspaceView(Path root, Workspace workspace, String error, List<TicketView> tickets, boolean singleRepo) {
     public String name() {
       return workspace != null ? workspace.getName() : root.getFileName().toString();
     }
@@ -110,7 +111,7 @@ public final class WorkspaceModel {
       try {
         ws = Workspace.load(root);
       } catch (Exception e) {
-        result.add(new WorkspaceView(root, null, e.getMessage(), List.of()));
+        result.add(new WorkspaceView(root, null, e.getMessage(), List.of(), false));
         continue;
       }
       syncLinks(ws);
@@ -123,7 +124,7 @@ public final class WorkspaceModel {
         }
         tickets.add(new TicketView(t, repos));
       }
-      result.add(new WorkspaceView(root, ws, null, tickets));
+      result.add(new WorkspaceView(root, ws, null, tickets, ws.isSingleRepo()));
     }
     return List.copyOf(result);
   }

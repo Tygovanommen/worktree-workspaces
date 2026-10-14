@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 /**
  * A workspace is one folder holding a {@code .workspace.json}, a {@code main/} folder with the
  * real clones, and one sibling folder per ticket with git worktrees of those clones.
+ * A workspace with a single repo keeps it in {@code main/} itself, and each ticket folder is a worktree of it.
  */
 public final class Workspace {
   public static final String MAIN = "main";
@@ -84,6 +85,26 @@ public final class Workspace {
   public Path ticketDir(String ticket) { return root.resolve(ticket); }
   public Path configFile() { return root.resolve(WorkspaceConfig.FILE_NAME); }
 
+  /** The one repo lives in main/ itself (main/.git), not in main/&lt;repo&gt;; tickets are worktrees of it. */
+  public boolean isSingleRepo() {
+    return Ticket.isGitDir(mainDir());
+  }
+
+  /** Name of the repo of a single-repo workspace: its key in .workspace.json, else the workspace's name. */
+  public String singleRepoName() {
+    return config.getRepos().isEmpty() ? getName() : config.getRepos().keySet().iterator().next();
+  }
+
+  /** Where {@code repo} is checked out in a ticket (or main): &lt;ticket&gt;/&lt;repo&gt;, or the ticket folder itself. */
+  public Path repoDir(String ticket, String repo) {
+    return isSingleRepo() ? ticketDir(ticket) : ticketDir(ticket).resolve(repo);
+  }
+
+  /** The real clone of {@code repo}: main/&lt;repo&gt;, or main/ in a single-repo workspace. */
+  public Path mainRepoDir(String repo) {
+    return repoDir(MAIN, repo);
+  }
+
   public void saveConfig() throws IOException {
     config.save(configFile());
   }
@@ -106,9 +127,9 @@ public final class Workspace {
     return result;
   }
 
-  /** A ticket folder has a .idea folder or at least one git checkout; other folders (docs, scripts) are ignored. */
+  /** A ticket folder has a .idea folder, is a git checkout or holds one; other folders (docs, scripts) are ignored. */
   public static boolean looksLikeTicket(Path dir) {
-    if (Files.isDirectory(dir.resolve(".idea"))) return true;
+    if (Files.isDirectory(dir.resolve(".idea")) || Ticket.isGitDir(dir)) return true;
     try (Stream<Path> s = Files.list(dir)) {
       return s.anyMatch(Ticket::isGitDir);
     } catch (IOException e) {

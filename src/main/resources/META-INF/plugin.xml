@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>nl.netonic.worktree-workspaces</id>
   <name>Worktree Workspaces</name>
-  <version>0.2.1</version>
+  <version>0.2.2</version>
   <vendor url="https://netonic.nl">Netonic</vendor>
   <idea-version since-build="262"/>
 
@@ -21,6 +21,14 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <p>0.2.2</p>
+    <ul>
+      <li>Undo Workspace: moves the repos back out of <code>main/</code> (to where they came from), removes the
+          tickets' worktrees (branches stay), the links and the workspace folder.</li>
+      <li>A workspace with one repo has it in <code>main/</code> itself; each ticket folder is a worktree of it.</li>
+      <li>New Workspace: repo rows can be removed; the starting rows are set in Settings (default backend, frontend).</li>
+      <li>Untracked <code>.idea/</code> and <code>.DS_Store</code> no longer count as changes.</li>
+    </ul>
     <p>0.2.1</p>
     <ul>
       <li>New Workspace / Get from VCS: a workspace may have the same name as the checkout it adopts
@@ -75,6 +83,9 @@
     <action id="WorktreeWorkspaces.AddExistingWorkspace" class="nl.netonic.workspaces.ide.actions.AddExistingWorkspaceAction"
             text="Add Existing Workspace…" description="Register a folder that already has a .workspace.json"
             icon="AllIcons.Actions.AddDirectory"/>
+    <action id="WorktreeWorkspaces.UndoWorkspace" class="nl.netonic.workspaces.ide.actions.UndoWorkspaceAction"
+            text="Undo Workspace…" description="Move the repos back out as normal checkouts and remove the workspace"
+            icon="AllIcons.Actions.Rollback"/>
     <action id="WorktreeWorkspaces.FinishTicket" class="nl.netonic.workspaces.ide.actions.FinishTicketAction"
             text="Finish Ticket…" description="Close the tab and remove the ticket's worktrees and folder"
             icon="AllIcons.Actions.Commit"/>
@@ -146,6 +157,7 @@
       <separator/>
       <reference ref="WorktreeWorkspaces.Refresh"/>
       <reference ref="WorktreeWorkspaces.Remove"/>
+      <reference ref="WorktreeWorkspaces.UndoWorkspace"/>
     </group>
 
     <group id="WorktreeWorkspaces.Menu" text="Workspaces" popup="true">
@@ -156,6 +168,7 @@
       <reference ref="WorktreeWorkspaces.NewWorkspace"/>
       <reference ref="WorktreeWorkspaces.AddRepo"/>
       <reference ref="WorktreeWorkspaces.AddExistingWorkspace"/>
+      <reference ref="WorktreeWorkspaces.UndoWorkspace"/>
       <separator/>
       <reference ref="WorktreeWorkspaces.ReportIssue"/>
       <reference ref="WorktreeWorkspaces.OpenGitHub"/>

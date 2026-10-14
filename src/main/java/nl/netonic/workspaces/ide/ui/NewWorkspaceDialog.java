@@ -38,7 +38,7 @@ public final class NewWorkspaceDialog extends DialogWrapper {
     nameField.getEmptyText().setText("klant-x");
     locationField.setText(defaultParent.toString());
     locationField.addBrowseFolderListener(project, FileChooserDescriptorFactory.singleDir().withTitle("Workspace Location"));
-    repos = new RepoSourcesPanel(project, List.of("backend", "frontend"), true);
+    repos = new RepoSourcesPanel(project, WorkspaceSettings.getInstance().defaultRepoNames(), true, true);
     init();
   }
 
@@ -56,6 +56,7 @@ public final class NewWorkspaceDialog extends DialogWrapper {
     return patternField.getText().trim();
   }
 
+  /** A single source has a null name: it goes in main/ itself. */
   public List<RepoSourcesPanel.RepoSource> repoSources() {
     return repos.sources();
   }
@@ -67,7 +68,8 @@ public final class NewWorkspaceDialog extends DialogWrapper {
   @Override
   protected @Nullable JComponent createCenterPanel() {
     JBLabel note = new JBLabel("<html>Existing checkouts are <b>moved</b> into &lt;workspace&gt;/main/&lt;name&gt;. "
-        + "Git URLs are cloned there.<br>Each ticket later gets its own folder next to main/.</html>");
+        + "Git URLs are cloned there.<br>Each ticket later gets its own folder next to main/.<br>"
+        + "With just one repo, main/ is the repo itself and each ticket folder is a worktree of it.</html>");
     note.setForeground(UIUtil.getContextHelpForeground());
     note.setFont(JBUI.Fonts.smallFont());
     patternField.getEmptyText().setText(WorkspaceConfig.DEFAULT_BRANCH_PATTERN);

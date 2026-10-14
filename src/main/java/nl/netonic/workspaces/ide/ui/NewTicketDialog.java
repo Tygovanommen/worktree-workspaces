@@ -192,7 +192,7 @@ public final class NewTicketDialog extends DialogWrapper {
         }
         WorkspaceConfig.RepoConfig rc = ws.getConfig().getRepos().get(row.repo());
         String base = rc != null && rc.getBaseBranch() != null ? rc.getBaseBranch()
-            : ops.detectDefaultBranch(ws.mainDir().resolve(row.repo()));
+            : ops.detectDefaultBranch(ws.mainRepoDir(row.repo()));
         ApplicationManager.getApplication().invokeLater(() -> {
           if (generation == rowsGeneration && !isDisposed()) fill(row.base(), branches, base);
         }, ModalityState.any());

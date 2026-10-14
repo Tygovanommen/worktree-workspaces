@@ -47,7 +47,7 @@ public final class IdeGit {
    * or one of its worktrees (they share branches) is a Git root of an open project, else from git. Not on the EDT.
    */
   public static WorkspaceOps.Branches branches(Workspace ws, String repo) throws GitException {
-    Path main = ws.mainDir().resolve(repo);
+    Path main = ws.mainRepoDir(repo);
     try {
       GitRepository exact = null;
       GitRepository worktree = null;

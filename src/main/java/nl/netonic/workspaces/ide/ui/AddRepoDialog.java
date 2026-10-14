@@ -28,7 +28,7 @@ public final class AddRepoDialog extends DialogWrapper {
     this.workspace = workspace;
     setTitle("Add Repo to " + workspace.getName());
     setOKButtonText("Add");
-    repos = new RepoSourcesPanel(project, List.of(""), true);
+    repos = new RepoSourcesPanel(project, List.of(""), true, false);
     existingNames.addAll(workspace.getConfig().getRepos().keySet());
     for (TicketRepo r : workspace.ticket(Workspace.MAIN).repos()) existingNames.add(r.name());
     init();

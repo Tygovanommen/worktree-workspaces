@@ -43,7 +43,7 @@ public final class WorkspaceConfig {
   /** Fields this version doesn't know (written by a newer one): kept as-is on save. */
   private final LinkedHashMap<String, Object> extra = new LinkedHashMap<>();
   private static final List<String> KNOWN = List.of("name", "branchPattern", "repos", "tickets");
-  private static final List<String> KNOWN_REPO = List.of("url", "baseBranch", "copy");
+  private static final List<String> KNOWN_REPO = List.of("url", "baseBranch", "copy", "adoptedFrom");
 
   public WorkspaceConfig(String name) {
     this.name = name;
@@ -111,6 +111,7 @@ public final class WorkspaceConfig {
           keepUnknown(r, KNOWN_REPO, rc.extra);
           rc.setBaseBranch(str(r.get("baseBranch"), null));
           rc.setUrl(str(r.get("url"), null));
+          rc.setAdoptedFrom(str(r.get("adoptedFrom"), null));
           if (r.get("copy") instanceof List<?> l) {
             List<String> copy = new ArrayList<>();
             for (Object o : l) if (o != null && !o.toString().isBlank()) copy.add(o.toString().trim());
@@ -142,6 +143,7 @@ public final class WorkspaceConfig {
       if (rc.getUrl() != null) r.put("url", rc.getUrl());
       if (rc.getBaseBranch() != null) r.put("baseBranch", rc.getBaseBranch());
       r.put("copy", new ArrayList<Object>(rc.getCopy()));
+      if (rc.getAdoptedFrom() != null) r.put("adoptedFrom", rc.getAdoptedFrom());
       r.putAll(rc.extra);
       rs.put(e.getKey(), r);
     }
@@ -179,6 +181,8 @@ public final class WorkspaceConfig {
   public static final class RepoConfig {
     private String baseBranch;
     private String url;
+    /** Where an adopted checkout was before it moved into main/; Undo Workspace puts it back there. */
+    private String adoptedFrom;
     private List<String> copy = new ArrayList<>(DEFAULT_COPY);
     private final LinkedHashMap<String, Object> extra = new LinkedHashMap<>();
 
@@ -187,6 +191,9 @@ public final class WorkspaceConfig {
 
     public String getUrl() { return url; }
     public void setUrl(String u) { url = u == null || u.isBlank() ? null : u.trim(); }
+
+    public String getAdoptedFrom() { return adoptedFrom; }
+    public void setAdoptedFrom(String p) { adoptedFrom = p == null || p.isBlank() ? null : p.trim(); }
 
     public List<String> getCopy() { return copy; }
     public void setCopy(List<String> c) { copy = c == null ? new ArrayList<>() : new ArrayList<>(c); }
