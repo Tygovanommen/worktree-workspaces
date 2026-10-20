@@ -62,7 +62,10 @@ stay tabs after a restart.
   branch.
 - Next to the workspace the plugin keeps a link per repo (`klant-x-login-42-backend`), so Herd and Valet find
   every ticket.
-- Each repo gets its own terminal tab when a ticket opens for the first time.
+- Each repo gets its own terminal tab when a ticket opens for the first time, and again when you reopen the
+  Terminal after closing all its tabs.
+- The ▶ next to a command in a README (`npm install` in `frontend/README.md`) runs it in that README's folder,
+  not in the ticket folder.
 - *Undo Workspace* (right-click the workspace) moves the repos back out and removes the workspace.
 
 All options are under *Settings › Tools › Worktree Workspaces*.

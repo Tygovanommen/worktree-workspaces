@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>nl.netonic.worktree-workspaces</id>
   <name>Worktree Workspaces</name>
-  <version>0.2.2</version>
+  <version>0.2.3</version>
   <vendor url="https://netonic.nl">Netonic</vendor>
   <idea-version since-build="262"/>
 
@@ -21,6 +21,13 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <p>0.2.3</p>
+    <ul>
+      <li>Toolbar switcher: the current workspace's tickets, other workspaces as submenus (open tabs first) and
+          <i>Search All Tickets…</i>. <i>Switch Ticket</i> searches every ticket as <i>workspace / ticket</i>.</li>
+      <li>Repo terminal tabs come back when you reopen the Terminal after closing all its tabs.</li>
+      <li>The ▶ next to a command in a README runs it in that README's folder (option in Settings).</li>
+    </ul>
     <p>0.2.2</p>
     <ul>
       <li>Undo Workspace: moves the repos back out of <code>main/</code> (to where they came from), removes the
@@ -70,6 +77,11 @@
               topic="com.intellij.openapi.project.ProjectCloseListener"/>
   </applicationListeners>
 
+  <projectListeners>
+    <listener class="nl.netonic.workspaces.ide.RepoTerminals$OnTerminalShown"
+              topic="com.intellij.openapi.wm.ex.ToolWindowManagerListener"/>
+  </projectListeners>
+
   <actions>
     <action id="WorktreeWorkspaces.NewTicket" class="nl.netonic.workspaces.ide.actions.NewTicketAction"
             text="New Ticket…" description="Create a ticket folder with a worktree per repo and open it as a tab"
@@ -90,7 +102,7 @@
             text="Finish Ticket…" description="Close the tab and remove the ticket's worktrees and folder"
             icon="AllIcons.Actions.Commit"/>
     <action id="WorktreeWorkspaces.SwitchTicket" class="nl.netonic.workspaces.ide.actions.SwitchTicketAction"
-            text="Switch Ticket…" description="Jump to another ticket tab" icon="AllIcons.Vcs.Branch"/>
+            text="Switch Ticket…" description="Search every ticket in every workspace and jump to its tab" icon="AllIcons.Vcs.Branch"/>
     <action id="WorktreeWorkspaces.Refresh" class="nl.netonic.workspaces.ide.actions.SimpleActions$Refresh"
             text="Refresh" description="Re-scan workspaces and git state" icon="AllIcons.Actions.Refresh"/>
     <action id="WorktreeWorkspaces.OpenSelected" class="nl.netonic.workspaces.ide.actions.SimpleActions$OpenSelected"

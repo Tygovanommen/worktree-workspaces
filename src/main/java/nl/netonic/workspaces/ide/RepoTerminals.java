@@ -13,13 +13,19 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
 import com.intellij.ui.content.Content;
+import com.intellij.ui.content.ContentManager;
+import com.intellij.ui.content.ContentManagerEvent;
+import com.intellij.ui.content.ContentManagerListener;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.core.TicketRepo;
+import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 import java.nio.file.Path;
@@ -34,10 +40,16 @@ import java.util.List;
  * That API is {@code @ApiStatus.Experimental} and lives in a terminal content module this plugin can't depend on,
  * so it's called by name; when it's missing or changed, PhpStorm's own "Open In › Terminal" action is used instead
  * (stable, but it shows the Terminal window and names the tab itself).
+ *
+ * <p>When every terminal tab is closed, the next time the Terminal window opens it gets the repo tabs again instead
+ * of PhpStorm's single tab in the ticket folder.
  */
 public final class RepoTerminals {
   private static final Logger LOG = Logger.getInstance(RepoTerminals.class);
   private static final String DONE_KEY = "nl.netonic.workspaces.repoTerminalsOpened";
+  private static final String TERMINAL = "Terminal";
+  private static final Key<List<RepoDir>> REPOS = Key.create("nl.netonic.workspaces.repoTerminalDirs");
+  private static final Key<Boolean> EMPTIED = Key.create("nl.netonic.workspaces.terminalEmptied");
   private static final String TABS_MANAGER = "com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTabsManager";
   private static final String TAB_BUILDER = "com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTabBuilder";
 
@@ -47,19 +59,70 @@ public final class RepoTerminals {
 
   /**
    * The first time a ticket (or main) opens as a project: a terminal per repo. Later opens are left alone, PhpStorm
-   * restores the tabs itself. Call off the EDT (reads the ticket folder).
+   * restores the tabs itself. Also starts watching for the Terminal window being emptied. Call off the EDT (reads the
+   * ticket folder).
    */
   public static void openOnFirstOpen(Project project, Ticket ticket) {
+    remember(project, ticket.repos());
+    ToolWindowManager.getInstance(project).invokeLater(() -> watchForEmpty(project));
     if (!WorkspaceSettings.getInstance().isOpenRepoTerminals()) return;
     PropertiesComponent props = PropertiesComponent.getInstance(project);
     if (props.getBoolean(DONE_KEY)) return;
-    List<RepoDir> repos = new ArrayList<>();
-    for (TicketRepo r : ticket.repos()) {
-      if (r.kind() != TicketRepo.Kind.MISSING) repos.add(new RepoDir(r.name(), r.dir()));
-    }
-    if (repos.isEmpty()) return;
+    List<RepoDir> repos = project.getUserData(REPOS);
+    if (repos == null || repos.isEmpty()) return;
     props.setValue(DONE_KEY, true);
     open(project, repos, true);
+  }
+
+  /** The repo folders an emptied Terminal window reopens with; updated whenever the ticket's repos are re-read. */
+  public static void remember(Project project, List<TicketRepo> repos) {
+    List<RepoDir> dirs = new ArrayList<>();
+    for (TicketRepo r : repos) {
+      if (r.kind() != TicketRepo.Kind.MISSING) dirs.add(new RepoDir(r.name(), r.dir()));
+    }
+    project.putUserData(REPOS, List.copyOf(dirs));
+  }
+
+  /**
+   * Notes when the last terminal tab is closed. Only then are tabs added on show: right after the window is created
+   * PhpStorm is still restoring the saved tabs, and adding ours too would double them.
+   */
+  private static void watchForEmpty(Project project) {
+    if (project.isDisposed()) return;
+    ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL);
+    if (tw == null) return;
+    tw.getContentManager().addContentManagerListener(new ContentManagerListener() {
+      @Override
+      public void contentRemoved(@NotNull ContentManagerEvent event) {
+        if (tw.getContentManager().isEmpty()) project.putUserData(EMPTIED, true);
+      }
+    });
+  }
+
+  /**
+   * Opening the emptied Terminal window: the repo tabs again. Runs synchronously on show, so the tabs are there
+   * before PhpStorm checks whether to add its own default tab.
+   */
+  public static final class OnTerminalShown implements ToolWindowManagerListener {
+    private final Project project;
+
+    public OnTerminalShown(Project project) {
+      this.project = project;
+    }
+
+    @Override
+    public void toolWindowShown(@NotNull ToolWindow toolWindow) {
+      if (!TERMINAL.equals(toolWindow.getId()) || project.getUserData(EMPTIED) != Boolean.TRUE) return;
+      project.putUserData(EMPTIED, null);
+      List<RepoDir> repos = project.getUserData(REPOS);
+      ContentManager cm = toolWindow.getContentManager();
+      if (repos == null || !cm.isEmpty() || !WorkspaceSettings.getInstance().isOpenRepoTerminals()) return;
+      for (RepoDir r : repos) {
+        if (!openNamedTab(project, r)) break;
+      }
+      Content first = cm.getContent(0);
+      if (first != null) cm.setSelectedContent(first);
+    }
   }
 
   /** Opens a terminal tab per repo, optionally skipping names that already have a tab. Any thread. */
@@ -79,7 +142,7 @@ public final class RepoTerminals {
 
   private static List<String> existingTabNames(Project project) {
     List<String> names = new ArrayList<>();
-    ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow("Terminal");
+    ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL);
     if (tw == null) return names;
     for (Content c : tw.getContentManager().getContents()) {
       if (c.getDisplayName() != null) names.add(c.getDisplayName());

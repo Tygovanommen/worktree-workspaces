@@ -37,6 +37,9 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     public String defaultCopy = String.join(", ", WorkspaceConfig.DEFAULT_COPY);
     public boolean deleteMergedBranches = true;
     public boolean refreshOnFocus = true;
+    /** See {@link MarkdownRunFolder}. */
+    public boolean markdownRunInFileFolder = true;
+    public boolean markdownRunFolderSetByUs = false;
     public String lastParentFolder = "";
     public int ticketsCreated = 0;
   }

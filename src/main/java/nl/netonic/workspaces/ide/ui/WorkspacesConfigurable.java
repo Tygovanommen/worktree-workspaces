@@ -13,6 +13,7 @@ import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import nl.netonic.workspaces.core.WorkspaceConfig;
+import nl.netonic.workspaces.ide.MarkdownRunFolder;
 import nl.netonic.workspaces.ide.WorkspaceModel;
 import nl.netonic.workspaces.ide.WorkspaceSettings;
 import org.jetbrains.annotations.NotNull;
@@ -27,6 +28,7 @@ import java.util.Objects;
 public final class WorkspacesConfigurable implements SearchableConfigurable {
   private JBCheckBox mergeTabs;
   private JBCheckBox repoTerminals;
+  private JBCheckBox markdownRun;
   private JBCheckBox askAfterClone;
   private JBCheckBox links;
   private TextFieldWithBrowseButton folder;
@@ -51,6 +53,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     mergeTabs = new JBCheckBox("Open tickets as tabs in one window");
     mergeTabs.setVisible(SystemInfo.isMac);
     repoTerminals = new JBCheckBox("Open a terminal per repo");
+    markdownRun = new JBCheckBox("Run Markdown commands in the file's folder");
     askAfterClone = new JBCheckBox("Offer to put a cloned repo in a workspace");
     links = new JBCheckBox("Link every repo next to its workspace");
     folder = new TextFieldWithBrowseButton();
@@ -71,6 +74,10 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
         .addComponent(repoTerminals)
         .addComponent(below(repoTerminals, "The first time a ticket or main opens, each repo gets a terminal tab in its "
             + "own folder, so npm and composer work as usual. Repos in the Workspaces panel also have Open in Terminal."))
+        .addComponent(markdownRun)
+        .addComponent(below(markdownRun, "The ▶ next to npm install in frontend/README.md runs it in frontend/, not in "
+            + "the ticket folder. This is a PhpStorm registry option (markdown.command.runner.use.file.directory), so "
+            + "it applies to all projects; switching this off resets it."))
         .addComponent(new TitledSeparator("Cloning"))
         .addComponent(askAfterClone)
         .addComponent(below(askAfterClone, "When Get from VCS finishes, a dialog offers a new or existing workspace. "
@@ -126,6 +133,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     WorkspaceSettings.SettingsState s = WorkspaceSettings.getInstance().getState();
     return mergeTabs.isSelected() != s.mergeWindowsIntoTabs
         || repoTerminals.isSelected() != s.openRepoTerminals
+        || markdownRun.isSelected() != s.markdownRunInFileFolder
         || !Objects.equals(cloneValue(), s.afterClone == null ? WorkspaceSettings.CLONE_ASK : s.afterClone)
         || links.isSelected() != s.createLinks
         || !folder.getText().trim().equals(s.defaultWorkspaceFolder)
@@ -144,8 +152,10 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     }
     WorkspaceSettings.SettingsState s = WorkspaceSettings.getInstance().getState();
     boolean linksChanged = links.isSelected() != s.createLinks;
+    boolean markdownChanged = markdownRun.isSelected() != s.markdownRunInFileFolder;
     s.mergeWindowsIntoTabs = mergeTabs.isSelected();
     s.openRepoTerminals = repoTerminals.isSelected();
+    s.markdownRunInFileFolder = markdownRun.isSelected();
     s.afterClone = cloneValue();
     s.createLinks = links.isSelected();
     s.defaultWorkspaceFolder = folder.getText().trim();
@@ -156,6 +166,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     s.refreshOnFocus = refreshOnFocus.isSelected();
     // the scan creates or removes the links
     if (linksChanged) WorkspaceModel.getInstance().refresh();
+    if (markdownChanged) MarkdownRunFolder.apply();
     reset();
   }
 
@@ -164,6 +175,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     WorkspaceSettings.SettingsState s = WorkspaceSettings.getInstance().getState();
     mergeTabs.setSelected(s.mergeWindowsIntoTabs);
     repoTerminals.setSelected(s.openRepoTerminals);
+    markdownRun.setSelected(s.markdownRunInFileFolder);
     askAfterClone.setSelected(!WorkspaceSettings.CLONE_NEVER.equals(s.afterClone));
     links.setSelected(s.createLinks);
     folder.setText(s.defaultWorkspaceFolder);

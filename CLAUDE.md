@@ -6,7 +6,7 @@ Claude sessions: `docs/PERFORMANCE.md`.
 
 ## Status (14 Oct 2026)
 
-- Version 0.2.2, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
+- Version 0.2.3, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
   Distributed via GitHub Releases + `updatePlugins.xml` (custom plugin repository), not the Marketplace.
 - Verified: compiles against PhpStorm 2026.2.3 (build 262.10968.76) jars; `CoreTests` pass on real git repos;
   `tools/api-check.sh` reports no internal / experimental / deprecated API use and no missing members; every
@@ -62,7 +62,10 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
   - `WorkspaceSettings` (app state, `worktreeWorkspaces.xml`: workspaces + all options incl. `defaultRepos`, the
     New Workspace rows; `opsOptions()` → core's
     `WorkspaceOps.Options` for links / default copy list), `WorkspaceModel` (background scan → `TOPIC`, also syncs links).
-  - `RepoTerminals` (a terminal tab per repo on a project's first open, flag in `PropertiesComponent`),
+  - `RepoTerminals` (a terminal tab per repo on a project's first open, flag in `PropertiesComponent`; again on
+    showing the Terminal window after its last tab was closed, `OnTerminalShown`),
+    `MarkdownRunFolder` (sets the Markdown registry key `markdown.command.runner.use.file.directory` on a workspace
+    project's open, else ▶ in `frontend/README.md` runs in the ticket folder; resets it only if we set it),
     `CloneListener` (`checkoutListener` before `ProjectDirCheckoutListener`: offers to move a fresh clone into a
     workspace, else PhpStorm opens it as usual).
   - `Tickets` (current ticket, open/focus, macOS merge-into-tabs), `ProjectRoots` (sync attached roots + Git mappings
@@ -72,7 +75,8 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
     `Feedback` (GitHub links, pre-filled issue form, one-time star nudge after the 3rd ticket).
   - `ui/` — tool window panel + renderer, dialogs (new workspace / ticket, add repo, finish, clone into workspace),
     `WorkspacesConfigurable` (Settings › Tools › Worktree Workspaces).
-  - `actions/` — all actions; `TicketSwitcherWidgetAction` is the toolbar dropdown.
+  - `actions/` — all actions; `TicketSwitcherWidgetAction` is the toolbar dropdown (`TicketPopups.switcher`: current
+    workspace in full, the others as submenus); Switch Ticket opens `TicketPopups.allTickets` (flat, searchable).
 - `src/main/resources/META-INF/plugin.xml` — registrations; `pluginIcon*.svg`; `icons/workspaces*.svg` (tool window).
 
 ## Build and test
@@ -159,7 +163,9 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
    *Branch from* lists Local / Remote like the Git branches popup; a local pick is used as-is, a remote one fetched.
 4. New Ticket with one repo: the other repo shows from main (grey in the panel); right-click › *Add … to …* works
    and the attached root disappears.
-5. Switcher: lists all tickets, focuses an open tab, opens a closed one as a tab (macOS merge).
+5. Switcher: lists the current workspace's tickets, other workspaces as submenus (open tabs first); focuses an open
+   tab, opens a closed one as a tab (macOS merge). *Search All Tickets…* / Switch Ticket: typing `klant-y` or `login` finds
+   `klant-y / LOGIN-42`.
 6. Finish: dirty worktree needs *Discard*; an extra file keeps the folder; a clean ticket is removed and its merged
    branch deleted.
 7. Restart PhpStorm: workspaces remembered, status refreshes when PhpStorm regains focus.
@@ -168,9 +174,12 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
    a ticket folder deleted in Finder loses its links on the next refresh.
 9. Settings › Tools › Worktree Workspaces: every option saves and applies; links off removes them on the next refresh.
 10. Terminals: first open of a ticket gives one tab per repo, named after it, in its folder; reopening adds none.
+    Close every terminal tab, open the Terminal window again: the repo tabs are back, no extra "Local" tab.
     If the tabs are unnamed and the Terminal window pops open, the reflection path failed (see idea.log).
-11. Get from VCS: the dialog appears; New / Add to workspace moves the clone, leaves a link, opens main;
+11. Markdown: ▶ next to `npm install` in a ticket's `frontend/README.md` runs in `frontend/`; Registry shows
+    `markdown.command.runner.use.file.directory` on; switching the option off resets it.
+12. Get from VCS: the dialog appears; New / Add to workspace moves the clone, leaves a link, opens main;
     Open as Usual opens the clone as before.
-12. Undo Workspace (panel: right-click the workspace): a ticket with a changed file blocks it; otherwise the
+13. Undo Workspace (panel: right-click the workspace): a ticket with a changed file blocks it; otherwise the
     dialog lists where each repo goes, tabs close, repos land there as plain clones (ticket branches still there),
     links and the workspace folder are gone, and the repos open as projects if you ran it from the workspace's window.

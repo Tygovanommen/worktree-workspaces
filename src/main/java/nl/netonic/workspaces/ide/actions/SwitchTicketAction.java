@@ -3,10 +3,10 @@ package nl.netonic.workspaces.ide.actions;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import org.jetbrains.annotations.NotNull;
 
-/** Find Action / menu entry: the same searchable list as the toolbar widget. */
+/** Find Action / menu entry / shortcut: every ticket of every workspace in one searchable list. */
 public final class SwitchTicketAction extends WsAction {
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
-    TicketPopups.switcher(e.getProject(), e.getDataContext()).showInBestPositionFor(e.getDataContext());
+    TicketPopups.allTickets(e.getProject()).showInBestPositionFor(e.getDataContext());
   }
 }

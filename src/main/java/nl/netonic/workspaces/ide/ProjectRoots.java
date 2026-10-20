@@ -37,6 +37,7 @@ public final class ProjectRoots {
   public static void syncLater(Project project, Ticket ticket) {
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
       List<TicketRepo> repos = ticket.repos();
+      RepoTerminals.remember(project, repos);
       ApplicationManager.getApplication().invokeLater(() -> sync(project, ticket, repos), project.getDisposed());
     });
   }
