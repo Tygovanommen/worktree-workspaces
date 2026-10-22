@@ -25,6 +25,14 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
   public static final class SettingsState {
     public List<String> workspaces = new ArrayList<>();
     public boolean mergeWindowsIntoTabs = true;
+    /** See {@link TicketColors}. */
+    public boolean colorTickets = true;
+    /** See {@link WindowTabs}. */
+    public boolean styleWindowTabs = true;
+    /** See {@link OpenAsTab}. */
+    public boolean openAsTabButton = true;
+    /** A {@link Tickets.OpenIn} name: the choice New Workspace starts with for where main opens. */
+    public String newWorkspaceOpenIn = Tickets.OpenIn.TAB.name();
     public boolean openRepoTerminals = true;
     /** {@link #CLONE_ASK} or {@link #CLONE_NEVER}. */
     public String afterClone = CLONE_ASK;
@@ -37,6 +45,8 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     public String defaultCopy = String.join(", ", WorkspaceConfig.DEFAULT_COPY);
     public boolean deleteMergedBranches = true;
     public boolean refreshOnFocus = true;
+    /** See {@link RecentProjects}. */
+    public boolean tidyRecentProjects = true;
     /** See {@link MarkdownRunFolder}. */
     public boolean markdownRunInFileFolder = true;
     public boolean markdownRunFolderSetByUs = false;
@@ -144,6 +154,18 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
   public boolean isAskAfterClone() { return !CLONE_NEVER.equals(state.afterClone); }
   public boolean isDeleteMergedBranches() { return state.deleteMergedBranches; }
   public boolean isRefreshOnFocus() { return state.refreshOnFocus; }
+  public boolean isTidyRecentProjects() { return state.tidyRecentProjects; }
+  public boolean isOpenAsTabButton() { return state.openAsTabButton; }
+  public boolean isColorTickets() { return state.colorTickets; }
+  public boolean isStyleWindowTabs() { return state.styleWindowTabs; }
+
+  /** Unknown or empty (older settings): a tab, as before the option existed. */
+  public Tickets.OpenIn newWorkspaceOpenIn() {
+    for (Tickets.OpenIn in : Tickets.OpenIn.values()) {
+      if (in.name().equals(state.newWorkspaceOpenIn)) return in;
+    }
+    return Tickets.OpenIn.TAB;
+  }
 
   /** @return the number of tickets created with the plugin so far, including this one */
   public synchronized int countTicketCreated() {

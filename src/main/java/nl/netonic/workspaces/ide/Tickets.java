@@ -19,6 +19,8 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.JFrame;
 import javax.swing.Timer;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,8 +77,45 @@ public final class Tickets {
     return findOpenProject(ticket) != null;
   }
 
+  /** Where a ticket that isn't open yet goes. */
+  public enum OpenIn {
+    /** A new window, merged into the current one as a tab (macOS; elsewhere a new window). */
+    TAB("New tab"),
+    NEW_WINDOW("New window"),
+    /** Closes the given project first; its window is then reused, or the new one becomes a tab next to the others. */
+    THIS_WINDOW("This window");
+
+    private final String label;
+
+    OpenIn(String label) {
+      this.label = label;
+    }
+
+    /** The choices that make sense here: a tab only on macOS, this window only with a project open. */
+    public static List<OpenIn> available(boolean projectOpen) {
+      List<OpenIn> out = new ArrayList<>(List.of(values()));
+      if (!SystemInfo.isMac) out.remove(TAB);
+      if (!projectOpen) out.remove(THIS_WINDOW);
+      return out;
+    }
+
+    /** Shown in the New Workspace dialog and the settings. */
+    @Override
+    public String toString() {
+      return label;
+    }
+  }
+
   /** Focuses the ticket's window/tab, or prepares its .idea and opens it as a new tab. Call on the EDT. */
   public static void open(Ticket ticket) {
+    open(ticket, null, null);
+  }
+
+  /**
+   * Like {@link #open(Ticket)}, opening a closed ticket {@code in} the given place; null: as a tab when the
+   * "open tickets as tabs" option is on. {@code current} is the project {@link OpenIn#THIS_WINDOW} replaces.
+   */
+  public static void open(Ticket ticket, @Nullable OpenIn in, @Nullable Project current) {
     if (!ticket.exists()) {
       Notifier.warn(null, ticket.displayName(), "This ticket folder no longer exists.");
       WorkspaceModel.getInstance().refresh();
@@ -102,7 +141,7 @@ public final class Tickets {
       }
       ApplicationManager.getApplication().invokeLater(() -> {
         try {
-          openPrepared(ticket);
+          openPrepared(ticket, in, current);
         } finally {
           OPENING.remove(dir);
         }
@@ -110,15 +149,29 @@ public final class Tickets {
     });
   }
 
-  private static void openPrepared(Ticket ticket) {
+  private static void openPrepared(Ticket ticket, @Nullable OpenIn in, @Nullable Project current) {
+    if (in == OpenIn.THIS_WINDOW) {
+      // reusing the frame itself needs internal API (OpenProjectTaskBuilder): close, then open as usual
+      // (current is null or disposed when it was already closed, e.g. its folder was moved into main/)
+      if (current != null && !current.isDisposed() && !ProjectManager.getInstance().closeAndDispose(current)) return;
+      in = null;
+    }
     // (path, projectToClose = none, forceOpenInNewFrame = true): never replaces the current window
     Project project = ProjectUtil.openOrImport(ticket.getDir(), null, true);
-    if (project != null) mergeIntoTabsLater(project);
+    if (project == null) return;
+    if (in == OpenIn.TAB) mergeIntoTabLater(project);
+    else if (in == null) mergeIntoTabsLater(project);
   }
 
   /** macOS: turn the new window into a tab of the existing window (Window › Merge All Project Windows). */
   static void mergeIntoTabsLater(Project project) {
-    if (!SystemInfo.isMac || !WorkspaceSettings.getInstance().isMergeWindowsIntoTabs()) return;
+    if (!WorkspaceSettings.getInstance().isMergeWindowsIntoTabs()) return;
+    mergeIntoTabLater(project);
+  }
+
+  /** Like {@link #mergeIntoTabsLater} without the setting: for an explicit "as a tab" choice. */
+  static void mergeIntoTabLater(Project project) {
+    if (!SystemInfo.isMac) return;
     Timer timer = new Timer(800, e -> {
       if (project.isDisposed()) return;
       try {

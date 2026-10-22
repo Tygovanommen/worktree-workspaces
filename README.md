@@ -38,6 +38,7 @@ Requires PhpStorm 2026.2 or newer.
 ## Quick start
 
 1. **Tools › Workspaces › New Workspace…** Pick a name and add your repos (a git URL or an existing checkout).
+   *Open in* chooses where it opens: a new tab, a new window, or this window.
 2. **New Ticket…** from the toolbar switcher or the panel's **+**. Enter `LOGIN-42` and tick the repos it touches.
    A new tab opens on branch `feature/LOGIN-42`.
 3. Work, commit, push. When it's merged: right-click the ticket › **Finish Ticket…**
@@ -67,6 +68,8 @@ stay tabs after a restart.
 - The ▶ next to a command in a README (`npm install` in `frontend/README.md`) runs it in that README's folder,
   not in the ticket folder.
 - *Undo Workspace* (right-click the workspace) moves the repos back out and removes the workspace.
+- macOS: PhpStorm's *Open Project* dialog gets *Merge in Current*, which opens any project as a tab of the current
+  window (in place of *Attach*; switch it off in Settings to get *Attach* back).
 
 All options are under *Settings › Tools › Worktree Workspaces*.
 

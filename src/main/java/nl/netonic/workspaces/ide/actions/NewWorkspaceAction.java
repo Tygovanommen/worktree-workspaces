@@ -20,7 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/** Creates &lt;location&gt;/&lt;name&gt;/ with main/ holding the cloned or moved repos, then opens main as a tab. */
+/**
+ * Creates &lt;location&gt;/&lt;name&gt;/ with main/ holding the cloned or moved repos, then opens main where the
+ * dialog says: a tab, a new window, or this window.
+ */
 public final class NewWorkspaceAction extends WsAction {
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
@@ -33,6 +36,7 @@ public final class NewWorkspaceAction extends WsAction {
     Path parent = dialog.parentFolder();
     String pattern = dialog.branchPattern();
     List<RepoSourcesPanel.RepoSource> sources = dialog.repoSources();
+    Tickets.OpenIn openIn = dialog.openIn();
     settings.setLastParentFolder(parent);
 
     List<Project> toClose = projectsInside(dialog.foldersToMove());
@@ -69,7 +73,7 @@ public final class NewWorkspaceAction extends WsAction {
         WorkspaceSettings.getInstance().addWorkspace(ws.getRoot());
         AddRepoAction.addAll(ops, ws, moved, cameFrom, log);
         return Workspace.load(ws.getRoot());
-      }, ws -> Tickets.open(ws.ticket(Workspace.MAIN)));
+      }, ws -> Tickets.open(ws.ticket(Workspace.MAIN), openIn, reportTo));
     });
   }
 }

@@ -6,7 +6,7 @@ Claude sessions: `docs/PERFORMANCE.md`.
 
 ## Status (14 Oct 2026)
 
-- Version 0.2.3, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
+- Version 0.2.4, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
   Distributed via GitHub Releases + `updatePlugins.xml` (custom plugin repository), not the Marketplace.
 - Verified: compiles against PhpStorm 2026.2.3 (build 262.10968.76) jars; `CoreTests` pass on real git repos;
   `tools/api-check.sh` reports no internal / experimental / deprecated API use and no missing members; every
@@ -60,15 +60,23 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
   - `IdeaFiles` — prepares a ticket's `.idea` (copy shared settings, module, `.name`, `vcs.xml`, attached content roots).
 - `ide/` — IntelliJ layer.
   - `WorkspaceSettings` (app state, `worktreeWorkspaces.xml`: workspaces + all options incl. `defaultRepos`, the
-    New Workspace rows; `opsOptions()` → core's
+    New Workspace rows, `newWorkspaceOpenIn`, the dialog's default *Open in*; `opsOptions()` → core's
     `WorkspaceOps.Options` for links / default copy list), `WorkspaceModel` (background scan → `TOPIC`, also syncs links).
   - `RepoTerminals` (a terminal tab per repo on a project's first open, flag in `PropertiesComponent`; again on
     showing the Terminal window after its last tab was closed, `OnTerminalShown`),
     `MarkdownRunFolder` (sets the Markdown registry key `markdown.command.runner.use.file.directory` on a workspace
     project's open, else ▶ in `frontend/README.md` runs in the ticket folder; resets it only if we set it),
     `CloneListener` (`checkoutListener` before `ProjectDirCheckoutListener`: offers to move a fresh clone into a
-    workspace, else PhpStorm opens it as usual).
-  - `Tickets` (current ticket, open/focus, macOS merge-into-tabs), `ProjectRoots` (sync attached roots + Git mappings
+    workspace, else PhpStorm opens it as usual), `RecentProjects` (Recent Projects keeps only `main` per workspace:
+    the workspace folder and closed tickets are removed on every scan and after a tab closes, never while PhpStorm
+    quits, so open ticket tabs still reopen; `RecentProjectsManager.hasPath` / `removePath`; option `tidyRecentProjects`),
+    `OpenAsTab` (`projectAttachProcessor`, `order="first"`, macOS: *Merge in Current* in the Open Project dialog,
+    opens the project in a new frame and merges it in; option `openAsTabButton`), `TicketColors` (on a ticket's
+    open: a project color from PhpStorm's 9-color palette that no other open project has; the index we set is kept in
+    `PropertiesComponent`, a color the user picked is never changed; option `colorTickets`), `WindowTabs` (macOS
+    window tabs: a dot in each project's color per tab and a light fill on unselected tabs; option `styleWindowTabs`).
+  - `Tickets` (current ticket, open/focus, macOS merge-into-tabs; `OpenIn` TAB / NEW_WINDOW / THIS_WINDOW for New
+    Workspace, THIS_WINDOW = `closeAndDispose` then open, since frame reuse needs Kotlin-internal `OpenProjectTaskBuilder`), `ProjectRoots` (sync attached roots + Git mappings
     of an open project), `TicketStartupActivity`, `RefreshListeners`, `Background` (progress task + notifications),
     `IdeGit` (git path/env from PhpStorm; `branches()` from an open `GitRepository` of main/<repo> or a worktree,
     else `git for-each-ref`), `ActionContext` (selection → ticket/workspace), `Notifier`,
@@ -135,7 +143,23 @@ tools/api-check.sh     # must end with "problems: none"
   descriptor can't depend on. `RepoTerminals` calls them by reflection through the class loader of the
   `Terminal.OpenInReworkedTerminal` action (so `api-check.sh` doesn't see them); on any failure it runs
   `Terminal.OpenInTerminal` with a `VIRTUAL_FILE` data context (stable, but shows the window). Recheck on upgrades.
+- `CheckoutListener.processCheckedOutDirectory` is `@RequiresBackgroundThread`: `CloneListener` shows its dialog
+  through `invokeAndWait`; never bail out off the EDT (that silently skipped the dialog before).
 - PhpStorm may show a trust dialog for new ticket folders (trust APIs are internal, so the plugin doesn't touch them).
+- Open Project dialog (`ProjectUtil.confirmOpenOrAttachProject`): This Window / New Window / one button from the first
+  enabled `ProjectAttachProcessor` (PhpStorm's `ModuleAttachProcessor` = Attach) / Cancel; it can't get a fourth.
+  `OpenAsTab` takes that slot only with a path and an open project (`isEnabled`), so module detach and
+  `canAttachToProject()` still reach PhpStorm's processor. It overrides the stable `attachToProject`, not the
+  `@Experimental` `attachToProjectAsync`, and opens via `invokeLater` (it runs inside PhpStorm's own open).
+- macOS window tabs (`MacWinTabsHandlerV2`) are drawn by PhpStorm in Swing: `com.intellij.ui.mac.WindowTabsComponent`,
+  a `JBTabsImpl` whose `TabInfo.getObject()` is the window's `IdeFrameImpl`. Its painter ignores `TabInfo` colors and
+  uses only the theme keys `MainWindow.Tab.*`, so `WindowTabs` sets `MainWindow.Tab.background` / `hoverBackground`
+  in `UIManager` (again on `LafManagerListener`, originals put back when off) and a dot via `TabInfo.setIcon`. The bar
+  is rebuilt on merge / move: an AWT `ContainerEvent` listener on that class name restyles it. Recheck on upgrades.
+- `TicketColors` sets the toolbar color through `ProjectWindowCustomizerService` (`getCurrentProjectColorIndex`,
+  `clearToolbarColorsAndInMemoryCache`, `setAssociatedColorsIndex`; `WindowTabs` reads `getGradientProjectColor`: all
+  `@ApiStatus.Internal`), called by reflection the way Change Project Color does it; on failure it logs and leaves
+  PhpStorm's color. Recheck on upgrades.
 
 ## Backlog
 
@@ -156,7 +180,8 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
    the project name once a workspace exists.
 2. New Workspace with one git URL and one existing checkout: the checkout is moved, `.workspace.json` has the right
    `baseBranch`, `main` opens as tab "name · main" with both repos and two Git roots. Remove a row (×) down to one:
-   the name field goes away and the repo lands in `main/` itself; a ticket of it is a worktree folder with its own
+   the name field goes away and the repo lands in `main/` itself; *Open in* New tab / New window / This window
+   (no tab outside macOS, no This window without an open project) starts on Settings › New Workspaces › *Open in*; a ticket of it is a worktree folder with its own
    `.idea`, shows clean, and finishes cleanly. Settings › Repos changes the starting rows.
 3. New Ticket with both repos: tab "name · KEY", branches `feature/KEY`, `vendor/` and `node_modules/` present.
    Key `KEY/x`: folder + tab `KEY-x`, branch `feature/KEY/x`, saved under `tickets` in `.workspace.json`.
@@ -183,3 +208,12 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
 13. Undo Workspace (panel: right-click the workspace): a ticket with a changed file blocks it; otherwise the
     dialog lists where each repo goes, tabs close, repos land there as plain clones (ticket branches still there),
     links and the workspace folder are gone, and the repos open as projects if you ran it from the workspace's window.
+14. Recent Projects (project widget / File › Open Recent): one `name · main` per workspace; the bare workspace folder
+    (e.g. `~/PhpstormProjects/nobears`) is gone after a refresh; closing a ticket tab removes it from the list;
+    quit with a ticket tab open: it reopens on the next start. With the option off, closed tickets stay in the list.
+15. Open Project (File › Open, any folder, macOS): the dialog shows *Merge in Current* instead of *Attach*; it opens
+    the project as a tab of the current window. With the option off, *Attach* is back.
+16. Toolbar colors: open three tickets as tabs: each tab's toolbar has a different project color; pick one via the
+    project widget › Change Project Color, reopen the ticket: your color stays. Window tabs (macOS): each has a dot in
+    its project's color (it follows a color change), unselected tabs have a light fill; still there after merging
+    another window in, switching theme, and switching the option off and on (off: plain tabs again).

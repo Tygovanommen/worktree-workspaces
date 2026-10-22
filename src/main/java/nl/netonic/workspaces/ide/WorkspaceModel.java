@@ -115,6 +115,11 @@ public final class WorkspaceModel {
         continue;
       }
       syncLinks(ws);
+      try {
+        RecentProjects.tidy(ws);
+      } catch (RuntimeException e) {
+        LOG.warn("Tidying Recent Projects of " + ws.getName() + " failed", e);
+      }
       List<TicketView> tickets = new ArrayList<>();
       for (Ticket t : ws.tickets()) {
         List<RepoView> repos = new ArrayList<>();
