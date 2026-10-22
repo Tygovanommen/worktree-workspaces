@@ -25,6 +25,7 @@ public final class TicketStartupActivity implements ProjectActivity {
       TicketColors.applyLater(project, ticket);
       MarkdownRunFolder.apply();
     }
+    WindowTabs.installLater();
     WorkspaceModel.getInstance().refreshIfStale(2_000);
     WorkspaceModel.getInstance().notifyChanged();
     return Unit.INSTANCE;

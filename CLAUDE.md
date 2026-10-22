@@ -73,7 +73,8 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
     `OpenAsTab` (`projectAttachProcessor`, `order="first"`, macOS: *Merge in Current* in the Open Project dialog,
     opens the project in a new frame and merges it in; option `openAsTabButton`), `TicketColors` (on a ticket's
     open: a project color from PhpStorm's 9-color palette that no other open project has; the index we set is kept in
-    `PropertiesComponent`, a color the user picked is never changed; option `colorTickets`).
+    `PropertiesComponent`, a color the user picked is never changed; option `colorTickets`), `WindowTabs` (macOS
+    window tabs: a dot in each project's color per tab and a light fill on unselected tabs; option `styleWindowTabs`).
   - `Tickets` (current ticket, open/focus, macOS merge-into-tabs; `OpenIn` TAB / NEW_WINDOW / THIS_WINDOW for New
     Workspace, THIS_WINDOW = `closeAndDispose` then open, since frame reuse needs Kotlin-internal `OpenProjectTaskBuilder`), `ProjectRoots` (sync attached roots + Git mappings
     of an open project), `TicketStartupActivity`, `RefreshListeners`, `Background` (progress task + notifications),
@@ -150,10 +151,15 @@ tools/api-check.sh     # must end with "problems: none"
   `OpenAsTab` takes that slot only with a path and an open project (`isEnabled`), so module detach and
   `canAttachToProject()` still reach PhpStorm's processor. It overrides the stable `attachToProject`, not the
   `@Experimental` `attachToProjectAsync`, and opens via `invokeLater` (it runs inside PhpStorm's own open).
-- macOS window tabs are native (`MacWinTabsHandler`, AppKit draws them): their color can't be set. `TicketColors`
-  tints the toolbar below instead through `ProjectWindowCustomizerService` (`getCurrentProjectColorIndex`,
-  `clearToolbarColorsAndInMemoryCache`, `setAssociatedColorsIndex`: all `@ApiStatus.Internal`), called by reflection
-  the way Change Project Color does it; on failure it logs and leaves PhpStorm's color. Recheck on upgrades.
+- macOS window tabs (`MacWinTabsHandlerV2`) are drawn by PhpStorm in Swing: `com.intellij.ui.mac.WindowTabsComponent`,
+  a `JBTabsImpl` whose `TabInfo.getObject()` is the window's `IdeFrameImpl`. Its painter ignores `TabInfo` colors and
+  uses only the theme keys `MainWindow.Tab.*`, so `WindowTabs` sets `MainWindow.Tab.background` / `hoverBackground`
+  in `UIManager` (again on `LafManagerListener`, originals put back when off) and a dot via `TabInfo.setIcon`. The bar
+  is rebuilt on merge / move: an AWT `ContainerEvent` listener on that class name restyles it. Recheck on upgrades.
+- `TicketColors` sets the toolbar color through `ProjectWindowCustomizerService` (`getCurrentProjectColorIndex`,
+  `clearToolbarColorsAndInMemoryCache`, `setAssociatedColorsIndex`; `WindowTabs` reads `getGradientProjectColor`: all
+  `@ApiStatus.Internal`), called by reflection the way Change Project Color does it; on failure it logs and leaves
+  PhpStorm's color. Recheck on upgrades.
 
 ## Backlog
 
@@ -208,4 +214,6 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
 15. Open Project (File › Open, any folder, macOS): the dialog shows *Merge in Current* instead of *Attach*; it opens
     the project as a tab of the current window. With the option off, *Attach* is back.
 16. Toolbar colors: open three tickets as tabs: each tab's toolbar has a different project color; pick one via the
-    project widget › Change Project Color, reopen the ticket: your color stays.
+    project widget › Change Project Color, reopen the ticket: your color stays. Window tabs (macOS): each has a dot in
+    its project's color (it follows a color change), unselected tabs have a light fill; still there after merging
+    another window in, switching theme, and switching the option off and on (off: plain tabs again).

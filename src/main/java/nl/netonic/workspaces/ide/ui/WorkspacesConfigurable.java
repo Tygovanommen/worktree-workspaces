@@ -16,6 +16,7 @@ import com.intellij.util.ui.UIUtil;
 import nl.netonic.workspaces.core.WorkspaceConfig;
 import nl.netonic.workspaces.ide.MarkdownRunFolder;
 import nl.netonic.workspaces.ide.Tickets;
+import nl.netonic.workspaces.ide.WindowTabs;
 import nl.netonic.workspaces.ide.WorkspaceModel;
 import nl.netonic.workspaces.ide.WorkspaceSettings;
 import org.jetbrains.annotations.NotNull;
@@ -32,6 +33,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
   private JBCheckBox mergeTabs;
   private JBCheckBox openAsTab;
   private JBCheckBox colorTickets;
+  private JBCheckBox styleTabs;
   private JBCheckBox repoTerminals;
   private JBCheckBox markdownRun;
   private JBCheckBox tidyRecent;
@@ -62,6 +64,8 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     openAsTab = new JBCheckBox("Add Merge in Current to PhpStorm's Open Project dialog");
     openAsTab.setVisible(SystemInfo.isMac);
     colorTickets = new JBCheckBox("Give each open ticket its own toolbar color");
+    styleTabs = new JBCheckBox("Make window tabs easier to see");
+    styleTabs.setVisible(SystemInfo.isMac);
     repoTerminals = new JBCheckBox("Open a terminal per repo");
     markdownRun = new JBCheckBox("Run Markdown commands in the file's folder");
     tidyRecent = new JBCheckBox("Show only main of each workspace in Recent Projects");
@@ -89,6 +93,9 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
         .addComponent(colorTickets)
         .addComponent(below(colorTickets, "When a ticket or main opens, it gets a project color (as in the project "
             + "widget's Change Project Color) that no other open tab has. A color you pick yourself is kept."))
+        .addComponent(styleTabs)
+        .addComponent(below(styleTabs, "Each tab in the bar above the toolbar shows a dot in its project's color, and "
+            + "unselected tabs get a light background so they stand out from the bar. Applies to every project."))
         .addComponent(repoTerminals)
         .addComponent(below(repoTerminals, "The first time a ticket or main opens, each repo gets a terminal tab in its "
             + "own folder, so npm and composer work as usual. Repos in the Workspaces panel also have Open in Terminal."))
@@ -158,6 +165,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     return mergeTabs.isSelected() != s.mergeWindowsIntoTabs
         || openAsTab.isSelected() != s.openAsTabButton
         || colorTickets.isSelected() != s.colorTickets
+        || styleTabs.isSelected() != s.styleWindowTabs
         || repoTerminals.isSelected() != s.openRepoTerminals
         || markdownRun.isSelected() != s.markdownRunInFileFolder
         || tidyRecent.isSelected() != s.tidyRecentProjects
@@ -185,6 +193,8 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     s.mergeWindowsIntoTabs = mergeTabs.isSelected();
     s.openAsTabButton = openAsTab.isSelected();
     s.colorTickets = colorTickets.isSelected();
+    boolean tabsChanged = styleTabs.isSelected() != s.styleWindowTabs;
+    s.styleWindowTabs = styleTabs.isSelected();
     s.openRepoTerminals = repoTerminals.isSelected();
     s.markdownRunInFileFolder = markdownRun.isSelected();
     s.tidyRecentProjects = tidyRecent.isSelected();
@@ -200,6 +210,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     // the scan creates or removes the links, and tidies Recent Projects
     if (linksChanged || tidyTurnedOn) WorkspaceModel.getInstance().refresh();
     if (markdownChanged) MarkdownRunFolder.apply();
+    if (tabsChanged) WindowTabs.refreshLater();
     reset();
   }
 
@@ -209,6 +220,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     mergeTabs.setSelected(s.mergeWindowsIntoTabs);
     openAsTab.setSelected(s.openAsTabButton);
     colorTickets.setSelected(s.colorTickets);
+    styleTabs.setSelected(s.styleWindowTabs);
     repoTerminals.setSelected(s.openRepoTerminals);
     markdownRun.setSelected(s.markdownRunInFileFolder);
     tidyRecent.setSelected(s.tidyRecentProjects);

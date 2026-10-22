@@ -76,6 +76,7 @@ final class TicketColors {
       props.setValue(KEY, String.valueOf(pick));
       JFrame frame = WindowManager.getInstance().getFrame(project);
       if (frame != null) frame.repaint();
+      WindowTabs.refreshLater(); // the tab's dot follows the new color
     } catch (Throwable t) {
       LOG.info("Could not set the toolbar color of " + project.getName(), t);
     }

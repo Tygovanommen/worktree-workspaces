@@ -27,6 +27,8 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
     public boolean mergeWindowsIntoTabs = true;
     /** See {@link TicketColors}. */
     public boolean colorTickets = true;
+    /** See {@link WindowTabs}. */
+    public boolean styleWindowTabs = true;
     /** See {@link OpenAsTab}. */
     public boolean openAsTabButton = true;
     /** A {@link Tickets.OpenIn} name: the choice New Workspace starts with for where main opens. */
@@ -155,6 +157,7 @@ public final class WorkspaceSettings implements PersistentStateComponent<Workspa
   public boolean isTidyRecentProjects() { return state.tidyRecentProjects; }
   public boolean isOpenAsTabButton() { return state.openAsTabButton; }
   public boolean isColorTickets() { return state.colorTickets; }
+  public boolean isStyleWindowTabs() { return state.styleWindowTabs; }
 
   /** Unknown or empty (older settings): a tab, as before the option existed. */
   public Tickets.OpenIn newWorkspaceOpenIn() {

@@ -28,6 +28,8 @@
           of the current window (in place of <i>Attach</i>; switch it off in Settings to get <i>Attach</i> back).</li>
       <li>Each open ticket gets its own toolbar color, so tabs side by side are easy to tell apart. A color you pick
           yourself (Change Project Color) is kept.</li>
+      <li>macOS: window tabs are easier to see: a dot in each project's color, and unselected tabs get a light
+          background instead of blending into the bar.</li>
       <li>Recent Projects shows only <i>main</i> of each workspace: closed tickets and the bare workspace folder are
           removed. Tabs open when PhpStorm quits still reopen.</li>
       <li>Fixed: after <i>Get from VCS</i> the "put it in a workspace" dialog didn't appear.</li>
