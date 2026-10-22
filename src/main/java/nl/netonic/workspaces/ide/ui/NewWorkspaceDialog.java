@@ -6,6 +6,7 @@ import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.ui.ValidationInfo;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBRadioButton;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
@@ -13,14 +14,19 @@ import com.intellij.util.ui.UIUtil;
 import nl.netonic.workspaces.core.Workspace;
 import nl.netonic.workspaces.core.WorkspaceConfig;
 import nl.netonic.workspaces.core.WorkspaceOps;
+import nl.netonic.workspaces.ide.Tickets;
 import nl.netonic.workspaces.ide.WorkspaceSettings;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.ButtonGroup;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
+import java.awt.FlowLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Name + location of a new workspace and the repos to put in main/. */
@@ -30,6 +36,8 @@ public final class NewWorkspaceDialog extends DialogWrapper {
   private final JBTextField patternField =
       new JBTextField(WorkspaceSettings.getInstance().defaultBranchPattern(), 20);
   private final RepoSourcesPanel repos;
+  /** Only {@link Tickets.OpenIn#available} choices. */
+  private final Map<Tickets.OpenIn, JBRadioButton> openIn = new EnumMap<>(Tickets.OpenIn.class);
 
   public NewWorkspaceDialog(@Nullable Project project, Path defaultParent) {
     super(project, true);
@@ -39,6 +47,12 @@ public final class NewWorkspaceDialog extends DialogWrapper {
     locationField.setText(defaultParent.toString());
     locationField.addBrowseFolderListener(project, FileChooserDescriptorFactory.singleDir().withTitle("Workspace Location"));
     repos = new RepoSourcesPanel(project, WorkspaceSettings.getInstance().defaultRepoNames(), true, true);
+    for (Tickets.OpenIn in : Tickets.OpenIn.available(project != null)) openIn.put(in, new JBRadioButton(in.toString()));
+    ButtonGroup group = new ButtonGroup();
+    openIn.values().forEach(group::add);
+    // the default from Settings; this window without an open project falls back to the first choice
+    JBRadioButton preferred = openIn.get(WorkspaceSettings.getInstance().newWorkspaceOpenIn());
+    (preferred != null ? preferred : openIn.values().iterator().next()).setSelected(true);
     init();
   }
 
@@ -61,6 +75,12 @@ public final class NewWorkspaceDialog extends DialogWrapper {
     return repos.sources();
   }
 
+  /** Where main opens once the workspace is created. */
+  public Tickets.OpenIn openIn() {
+    return openIn.entrySet().stream().filter(e -> e.getValue().isSelected()).map(Map.Entry::getKey)
+        .findFirst().orElse(Tickets.OpenIn.NEW_WINDOW);
+  }
+
   public List<Path> foldersToMove() {
     return repos.foldersToMove();
   }
@@ -73,6 +93,11 @@ public final class NewWorkspaceDialog extends DialogWrapper {
     note.setForeground(UIUtil.getContextHelpForeground());
     note.setFont(JBUI.Fonts.smallFont());
     patternField.getEmptyText().setText(WorkspaceConfig.DEFAULT_BRANCH_PATTERN);
+    JPanel openInRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    openIn.values().forEach(b -> {
+      b.setBorder(JBUI.Borders.emptyRight(12));
+      openInRow.add(b);
+    });
     JPanel panel = FormBuilder.createFormBuilder()
         .addLabeledComponent("Name:", nameField)
         .addLabeledComponent("Location:", locationField)
@@ -82,6 +107,8 @@ public final class NewWorkspaceDialog extends DialogWrapper {
         .addLabeledComponent("Repos:", repos, true)
         .addVerticalGap(6)
         .addComponent(note)
+        .addVerticalGap(8)
+        .addLabeledComponent("Open in:", openInRow)
         .getPanel();
     panel.setPreferredSize(JBUI.size(640, -1));
     return panel;

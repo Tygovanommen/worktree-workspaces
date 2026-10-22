@@ -11,18 +11,18 @@ import org.jetbrains.annotations.NotNull;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Runs right after Get from VCS clones a repo, before PhpStorm opens it: offers to move the clone into a new or
  * existing workspace and open main instead. Off with Settings › Tools › Worktree Workspaces › Cloning.
+ * The platform calls checkout listeners on a background thread (build 262), so the dialog is shown via invokeAndWait.
  */
 public final class CloneListener implements CheckoutListener {
   @Override
   public boolean processCheckedOutDirectory(@NotNull Project project, @NotNull Path directory) {
     if (!WorkspaceSettings.getInstance().isAskAfterClone()) return false;
-    // the dialog needs the EDT; anywhere else, let PhpStorm open it as usual
-    if (!ApplicationManager.getApplication().isDispatchThread()) return false;
     Path clone = directory.toAbsolutePath().normalize();
     // already inside a workspace (cloned into one by hand): leave it alone
     if (WorkspaceSettings.getInstance().workspaceRoots().stream().anyMatch(clone::startsWith)) return false;
@@ -31,6 +31,14 @@ public final class CloneListener implements CheckoutListener {
     List<Workspace> workspaces = WorkspaceModel.getInstance().snapshot().stream().filter(v -> !v.singleRepo())
         .map(WorkspaceModel.WorkspaceView::workspace).filter(Objects::nonNull).toList();
     Project reportTo = project.isDefault() ? null : project;
+    AtomicBoolean taken = new AtomicBoolean();
+    // runs right away when already on the EDT
+    ApplicationManager.getApplication().invokeAndWait(() -> taken.set(offer(reportTo, clone, workspaces)));
+    return taken.get();
+  }
+
+  /** Shows the dialog and starts the move; false if the user keeps the clone as a normal project. */
+  private static boolean offer(Project reportTo, Path clone, List<Workspace> workspaces) {
     CloneIntoWorkspaceDialog dialog = new CloneIntoWorkspaceDialog(reportTo, clone, workspaces,
         WorkspaceSettings.getInstance().defaultParentFolder());
     if (!dialog.showAndGet()) return false;

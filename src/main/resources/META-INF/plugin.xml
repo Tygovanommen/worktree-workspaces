@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>nl.netonic.worktree-workspaces</id>
   <name>Worktree Workspaces</name>
-  <version>0.2.3</version>
+  <version>0.2.4</version>
   <vendor url="https://netonic.nl">Netonic</vendor>
   <idea-version since-build="262"/>
 
@@ -21,6 +21,17 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <p>0.2.4</p>
+    <ul>
+      <li>New Workspace: <i>Open in</i> a new tab, a new window or this window; the default is set in Settings.</li>
+      <li>macOS: PhpStorm's <i>Open Project</i> dialog gets <i>Merge in Current</i>, which opens any project as a tab
+          of the current window (in place of <i>Attach</i>; switch it off in Settings to get <i>Attach</i> back).</li>
+      <li>Each open ticket gets its own toolbar color, so tabs side by side are easy to tell apart. A color you pick
+          yourself (Change Project Color) is kept.</li>
+      <li>Recent Projects shows only <i>main</i> of each workspace: closed tickets and the bare workspace folder are
+          removed. Tabs open when PhpStorm quits still reopen.</li>
+      <li>Fixed: after <i>Get from VCS</i> the "put it in a workspace" dialog didn't appear.</li>
+    </ul>
     <p>0.2.3</p>
     <ul>
       <li>Toolbar switcher: the current workspace's tickets, other workspaces as submenus (open tabs first) and
@@ -68,6 +79,8 @@
     <!-- before PhpStorm's own listeners, which open the clone as a project -->
     <checkoutListener implementation="nl.netonic.workspaces.ide.CloneListener" id="WorktreeWorkspacesClone"
                       order="before ProjectDirCheckoutListener"/>
+    <!-- the Open Project dialog's third button (PhpStorm's Attach) while the option is on, macOS only -->
+    <projectAttachProcessor implementation="nl.netonic.workspaces.ide.OpenAsTab" order="first"/>
   </extensions>
 
   <applicationListeners>
@@ -75,6 +88,8 @@
               topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     <listener class="nl.netonic.workspaces.ide.RefreshListeners$OnProjectClose"
               topic="com.intellij.openapi.project.ProjectCloseListener"/>
+    <listener class="nl.netonic.workspaces.ide.RecentProjects$OnExit"
+              topic="com.intellij.ide.AppLifecycleListener"/>
   </applicationListeners>
 
   <projectListeners>

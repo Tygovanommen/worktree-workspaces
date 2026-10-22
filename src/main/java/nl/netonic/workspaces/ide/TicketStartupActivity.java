@@ -10,7 +10,8 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * When a ticket project opens: remember its workspace, make sure attached repos + Git roots are set, and (the first
- * time, if enabled) open a terminal per repo; let Markdown ▶ commands run in the README's folder.
+ * time, if enabled) open a terminal per repo; give it a toolbar color no other open tab has; let Markdown ▶ commands
+ * run in the README's folder.
  */
 public final class TicketStartupActivity implements ProjectActivity {
   @Override
@@ -21,6 +22,7 @@ public final class TicketStartupActivity implements ProjectActivity {
       WorkspaceSettings.getInstance().addWorkspace(ticket.getWorkspace().getRoot());
       ProjectRoots.syncLater(project, ticket);
       RepoTerminals.openOnFirstOpen(project, ticket);
+      TicketColors.applyLater(project, ticket);
       MarkdownRunFolder.apply();
     }
     WorkspaceModel.getInstance().refreshIfStale(2_000);

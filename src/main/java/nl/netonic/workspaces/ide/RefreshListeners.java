@@ -6,7 +6,7 @@ import com.intellij.openapi.project.ProjectCloseListener;
 import com.intellij.openapi.wm.IdeFrame;
 import org.jetbrains.annotations.NotNull;
 
-/** Keeps the panel current: re-scan when PhpStorm gets focus, re-render when a tab closes. */
+/** Keeps the panel current: re-scan when PhpStorm gets focus, re-render when a tab closes (and tidy Recent Projects). */
 public final class RefreshListeners {
   private RefreshListeners() {}
 
@@ -21,6 +21,7 @@ public final class RefreshListeners {
     @Override
     public void projectClosed(@NotNull Project project) {
       WorkspaceModel.getInstance().notifyChanged();
+      RecentProjects.projectClosed(project);
     }
   }
 }
