@@ -23,7 +23,7 @@ switching tabs.
 - **Safe cleanup:** *Finish Ticket* warns about uncommitted or unpushed work before removing anything.
 - **No lock-in:** tickets are plain PhpStorm projects and plain git worktrees.
 
-![A tab per ticket, a switcher in the toolbar, and a panel with git state](docs/plan/ui-mockup.png)
+![A tab per ticket, a switcher in the toolbar, and a panel with git state](docs/screenshots/switcher.png)
 
 ## Install
 
@@ -42,6 +42,11 @@ Requires PhpStorm 2026.2 or newer.
 2. **New Ticket…** from the toolbar switcher or the panel's **+**. Enter `LOGIN-42` and tick the repos it touches.
    A new tab opens on branch `feature/LOGIN-42`.
 3. Work, commit, push. When it's merged: right-click the ticket › **Finish Ticket…**
+
+<p>
+  <img src="docs/screenshots/new-ticket.png" width="49%" alt="New Ticket: a key, the repos it touches and their base branch">
+  <img src="docs/screenshots/finish-ticket.png" width="49%" alt="Finish Ticket warns about uncommitted and unpushed work">
+</p>
 
 **macOS tip:** set *System Settings › Desktop & Dock › Prefer tabs when opening documents* to **Always** so tickets
 stay tabs after a restart.

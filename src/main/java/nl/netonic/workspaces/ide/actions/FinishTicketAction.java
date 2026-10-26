@@ -12,6 +12,7 @@ import nl.netonic.workspaces.ide.Notifier;
 import nl.netonic.workspaces.ide.Tickets;
 import nl.netonic.workspaces.ide.ui.FinishTicketDialog;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -27,9 +28,12 @@ public final class FinishTicketAction extends WsAction {
 
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
-    Project project = e.getProject();
     Ticket ticket = ActionContext.ticket(e);
-    if (ticket == null || ticket.isMain()) return;
+    if (ticket != null && !ticket.isMain()) finish(e.getProject(), ticket);
+  }
+
+  /** Also used by the ticket switcher, whose rows aren't a panel selection. */
+  static void finish(@Nullable Project project, Ticket ticket) {
     // unsaved editor changes must be on disk, or the check below can't see them
     FileDocumentManager.getInstance().saveAllDocuments();
 

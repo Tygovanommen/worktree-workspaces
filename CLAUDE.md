@@ -4,15 +4,16 @@ PhpStorm plugin by Netonic: one PhpStorm window, one tab per ticket, backend + f
 User-facing docs: `README.md` (public on GitHub, MIT). Original plan, mock-ups and decisions: `docs/PLAN.md`. Performance and parallel
 Claude sessions: `docs/PERFORMANCE.md`.
 
-## Status (14 Oct 2026)
+## Status (26 Oct 2026)
 
-- Version 0.2.4, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
+- Version 0.2.5, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
   Distributed via GitHub Releases + `updatePlugins.xml` (custom plugin repository), not the Marketplace.
 - Verified: compiles against PhpStorm 2026.2.3 (build 262.10968.76) jars; `CoreTests` pass on real git repos;
   `tools/api-check.sh` reports no internal / experimental / deprecated API use and no missing members; every
   `plugin.xml` class, icon, extension point and action group exists in build 262; two independent code reviews
   (12 + 21 findings fixed; open: some config reads on the EDT, see backlog).
-- **Not verified yet: running inside PhpStorm.** Use the checklist at the bottom on first install and fix what breaks.
+- Runs in PhpStorm: `tools/sandbox/e2e.sh` drives the checklist at the bottom in a real, sandboxed PhpStorm 2026.2.3
+  (macOS). Not automated: Herd picking up the links (8), ▶ in a README (11), and theme switching (16).
 
 ## Model on disk
 
@@ -66,7 +67,7 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
     showing the Terminal window after its last tab was closed, `OnTerminalShown`),
     `MarkdownRunFolder` (sets the Markdown registry key `markdown.command.runner.use.file.directory` on a workspace
     project's open, else ▶ in `frontend/README.md` runs in the ticket folder; resets it only if we set it),
-    `CloneListener` (`checkoutListener` before `ProjectDirCheckoutListener`: offers to move a fresh clone into a
+    `CloneListener` (`checkoutListener` `first, before ProjectDirCheckoutListener`, which is itself `first`: offers to move a fresh clone into a
     workspace, else PhpStorm opens it as usual), `RecentProjects` (Recent Projects keeps only `main` per workspace:
     the workspace folder and closed tickets are removed on every scan and after a tab closes, never while PhpStorm
     quits, so open ticket tabs still reopen; `RecentProjectsManager.hasPath` / `removePath`; option `tidyRecentProjects`),
@@ -84,16 +85,35 @@ Ticket keys may contain `/` (`Workspace.isValidTicketKey`, `ticketFolderName`); 
   - `ui/` — tool window panel + renderer, dialogs (new workspace / ticket, add repo, finish, clone into workspace),
     `WorkspacesConfigurable` (Settings › Tools › Worktree Workspaces).
   - `actions/` — all actions; `TicketSwitcherWidgetAction` is the toolbar dropdown (`TicketPopups.switcher`: current
-    workspace in full, the others as submenus); Switch Ticket opens `TicketPopups.allTickets` (flat, searchable).
+    workspace in full, the others as submenus, then *Finish KEY…* / *Finish Other Ticket* via
+    `FinishTicketAction.finish`; icon `WsIcons.WORKSPACES`, not Git's branch icon; search field always shown, typing
+    swaps the browse rows for every ticket as `workspace / ticket`); Switch Ticket opens `TicketPopups.allTickets`
+    (flat, searchable).
 - `src/main/resources/META-INF/plugin.xml` — registrations; `pluginIcon*.svg`; `icons/workspaces*.svg` (tool window).
 
 ## Build and test
 
 ```
-./build.sh             # tests + zip; PHPSTORM_CONTENTS defaults to ~/Applications/PhpStorm.app/Contents
-tools/api-check.sh     # must end with "problems: none"
+./build.sh                 # tests + zip; PHPSTORM_CONTENTS defaults to ~/Applications/PhpStorm.app/Contents
+tools/api-check.sh         # must end with "problems: none"
+tools/sandbox/e2e.sh       # the first-run checklist below, in a real sandboxed PhpStorm (macOS, ~10 min)
+tools/sandbox/capture.sh   # docs/screenshots/*.png from the same sandbox
 ```
 
+- `tools/sandbox`: `demo.sh` builds fake workspaces (`seed-repos.sh` + `DemoWorkspaces.java`, via core) under
+  `/tmp/wsdemo` and starts PhpStorm with its own config / system / plugins there (only `phpstorm.key` and font /
+  color scheme settings are copied; `user.home` is the demo root, so paths show as `~/PhpstormProjects/…`).
+  `--restart` (state kept, plugin reinstalled from `build/`), `--stop`, `--probe`. It is driven through
+  `helper/` (a plugin installed only there): `cmd.sh <command>`, e.g. `windows`, `ui`, `click text=Create`,
+  `field 1 klant-z`, `check <label> true`, `actionwith <action> <workspace> [ticket] [repo]` (as a panel
+  selection), `popupsearch` / `popupselect` / `list` / `esc`, `probe projects|roots|terminals|model|recent|
+  tabgroup|color…`, `shot`. `Commands` and `Probe` are reloaded for every command (`demo.sh --probe` after
+  editing them), `ShotHelper` only polls.
+- The sandbox never has keyboard focus (it isn't the active app): drive popups through their objects (as
+  `popupsearch` does), not key events. Run clicks through `Application.invokeLater` (write-intent lock, like a
+  real click), and give a dialog a moment after it shows before clicking (`e2e.sh` `dialog`).
+- Shots are painted from Swing at 2×, so no Screen Recording permission is needed; traffic lights, dialog title
+  and shadow are drawn by the helper. Quit through `cmd.sh quit` (`demo.sh --stop` does): a kill saves no settings.
 - PhpStorm 2026.2's jars are Java 25 class files, so javac must be 25; output targets `--release 21`.
   `JAVA_HOME` defaults to PhpStorm's bundled JBR (has `javac`, no `jar`: `build.sh` falls back to `zip`).
 - CI: `tests.yml` runs `CoreTests` on every push (macOS + Linux, no PhpStorm). `release.yml` runs by hand (Actions › Release ›
@@ -133,6 +153,10 @@ tools/api-check.sh     # must end with "problems: none"
 
 - Toolbar widget extends `com.intellij.openapi.wm.impl.ExpandableComboAction` (impl package, not annotated internal):
   the most likely thing to break on PhpStorm upgrades. The panel and Tools › Workspaces still work without it.
+- Both ticket popups are `TicketPopups.SearchPopup`, a subclass of `com.intellij.ui.popup.PopupFactoryImpl.ActionGroupPopup`
+  (impl, not annotated): `setSpeedSearchAlwaysShown()` for the Git-style search field, `shouldBeShowing` override
+  for rows that show only while searching / browsing (a plain popup's speed search doesn't look into submenus).
+  Recheck on upgrades.
 - Opening a ticket: `ProjectUtil.openOrImport(path, null, true)`; on macOS `MergeAllWindowsAction` is then run via
   `ActionManager.tryToExecute` with the new frame as context (toggle in the panel's ⚙).
 - `ProjectActivity` is a Kotlin suspend interface; the Java implementation returns `Unit.INSTANCE`.
@@ -171,10 +195,14 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
 4. Setup commands after create (`composer install`, `npm ci`, migrations, `herd link`).
 5. Jira picker for New Ticket; ticket notes/status; auto-tidy merged tickets and idle tabs.
 6. Default shortcut for Switch Ticket (currently unbound).
-7. Move remaining config reads off the EDT (`Tickets.current` cache miss in the panel/switcher,
+7. Opening a ticket as a tab runs *Merge All Windows*, which also takes in a window opened with *Open in: New window*
+   (`e2e.sh` reports it as KNOWN); merge only the new frame into the window it came from.
+8. Adding a repo (Add Repo, Get from VCS) doesn't attach it to already open ticket tabs until they reopen
+   (`ProjectRoots.syncLater` runs only on open and after Add Worktree).
+9. Move remaining config reads off the EDT (`Tickets.current` cache miss in the panel/switcher,
    `ActionContext.allWorkspaces()` in New Ticket / Add Repo, `repos()` in dialogs): use `WorkspaceModel.snapshot()`.
 
-## First-run checklist (manual, in PhpStorm)
+## First-run checklist (in PhpStorm; most of it automated by `tools/sandbox/e2e.sh`)
 
 1. Install the zip and restart: *Workspaces* tool window on the left, Tools › Workspaces menu, toolbar widget next to
    the project name once a workspace exists.
@@ -189,8 +217,10 @@ From `docs/PERFORMANCE.md` and `docs/PLAN.md`, roughly in order:
 4. New Ticket with one repo: the other repo shows from main (grey in the panel); right-click › *Add … to …* works
    and the attached root disappears.
 5. Switcher: lists the current workspace's tickets, other workspaces as submenus (open tabs first); focuses an open
-   tab, opens a closed one as a tab (macOS merge). *Search All Tickets…* / Switch Ticket: typing `klant-y` or `login` finds
-   `klant-y / LOGIN-42`.
+   tab, opens a closed one as a tab (macOS merge).
+   *Finish KEY…* / *Finish Other Ticket* open the Finish dialog for that ticket. The search field is always there;
+   typing `klant-y` or `login` (in the switcher or Switch Ticket) finds `klant-y / LOGIN-42`, clearing it brings
+   the submenus back.
 6. Finish: dirty worktree needs *Discard*; an extra file keeps the folder; a clean ticket is removed and its merged
    branch deleted.
 7. Restart PhpStorm: workspaces remembered, status refreshes when PhpStorm regains focus.

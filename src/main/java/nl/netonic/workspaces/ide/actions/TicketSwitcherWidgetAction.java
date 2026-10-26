@@ -1,6 +1,5 @@
 package nl.netonic.workspaces.ide.actions;
 
-import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.DumbAware;
@@ -9,6 +8,7 @@ import com.intellij.openapi.wm.impl.ExpandableComboAction;
 import nl.netonic.workspaces.core.Ticket;
 import nl.netonic.workspaces.ide.Tickets;
 import nl.netonic.workspaces.ide.WorkspaceSettings;
+import nl.netonic.workspaces.ide.WsIcons;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,7 +27,7 @@ public final class TicketSwitcherWidgetAction extends ExpandableComboAction impl
     if (!anyWorkspace) return;
     e.getPresentation().setText(t != null ? t.getWorkspace().getName() + " / " + t.getName() : "Workspaces", false);
     e.getPresentation().setDescription("Switch ticket");
-    e.getPresentation().setIcon(t != null && t.isMain() ? AllIcons.Nodes.HomeFolder : AllIcons.Vcs.Branch);
+    e.getPresentation().setIcon(WsIcons.WORKSPACES);
   }
 
   @Override

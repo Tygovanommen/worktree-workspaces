@@ -99,7 +99,7 @@ final class WorkspacesTreeRenderer extends ColoredTreeCellRenderer {
     setToolTipText(r.dir().toString());
   }
 
-  private static String tildePath(String p) {
+  static String tildePath(String p) {
     String home = System.getProperty("user.home");
     return home != null && p.startsWith(home) ? "~" + p.substring(home.length()) : p;
   }

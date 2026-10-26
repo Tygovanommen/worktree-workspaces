@@ -1,0 +1,12 @@
+<idea-plugin>
+  <id>nl.netonic.worktree-workspaces.shots</id>
+  <name>Worktree Workspaces screenshot helper</name>
+  <version>1</version>
+  <vendor>Netonic</vendor>
+  <description>Docs screenshots only: installed by tools/sandbox/demo.sh into a sandboxed PhpStorm.</description>
+  <depends>com.intellij.modules.platform</depends>
+  <depends>nl.netonic.worktree-workspaces</depends>
+  <applicationListeners>
+    <listener class="nl.netonic.workspaces.shots.ShotHelper" topic="com.intellij.ide.AppLifecycleListener"/>
+  </applicationListeners>
+</idea-plugin>

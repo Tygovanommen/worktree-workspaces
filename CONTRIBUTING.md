@@ -9,6 +9,7 @@ You only need PhpStorm 2026.2+ installed (no Gradle).
 ```
 ./build.sh              # tests + build/distributions/worktree-workspaces-<version>.zip
 tools/api-check.sh      # must end with "problems: none"
+tools/sandbox/e2e.sh    # macOS: the plugin in a real, separate PhpStorm on fake workspaces (~10 min)
 ```
 
 PhpStorm somewhere else? `PHPSTORM_CONTENTS=/path/to/PhpStorm.app/Contents ./build.sh`.

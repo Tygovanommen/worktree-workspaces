@@ -149,13 +149,19 @@ public final class WorkspacesPanel extends SimpleToolWindowPanel implements Disp
     for (int i = 0; i < root.getChildCount(); i++) {
       DefaultMutableTreeNode wn = (DefaultMutableTreeNode) root.getChildAt(i);
       TreePath wp = new TreePath(new Object[]{root, wn});
-      if (firstBuild || expanded.contains(key(wn))) tree.expandPath(wp);
+      // first build: only the workspace of this window's ticket is open, the others start collapsed
+      boolean active = current != null
+          && ((WorkspaceView) wn.getUserObject()).tickets().stream().anyMatch(tv -> tv.ticket().equals(current));
+      if (expanded.contains(key(wn)) || (firstBuild && active)) tree.expandPath(wp);
       for (int j = 0; j < wn.getChildCount(); j++) {
         DefaultMutableTreeNode tn = (DefaultMutableTreeNode) wn.getChildAt(j);
         TreePath tp = wp.pathByAddingChild(tn);
         Ticket t = ((TicketView) tn.getUserObject()).ticket();
         boolean isCurrent = t.equals(current);
-        if (expanded.contains(key(tn)) || (firstBuild && (isCurrent || Tickets.isOpen(t)))) tree.expandPath(tp);
+        // expandPath also expands the parent, so a ticket only opens on first build inside the active workspace
+        if (expanded.contains(key(tn)) || (firstBuild && active && (isCurrent || Tickets.isOpen(t)))) {
+          tree.expandPath(tp);
+        }
         if (key(tn).equals(selected) || (selected == null && isCurrent)) toSelect = tp;
       }
       if (key(wn).equals(selected)) toSelect = wp;

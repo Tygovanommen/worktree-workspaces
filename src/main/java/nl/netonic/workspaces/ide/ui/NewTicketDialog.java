@@ -72,7 +72,7 @@ public final class NewTicketDialog extends DialogWrapper {
       @Override
       public void customize(@NotNull JList<? extends Workspace> list, Workspace w, int index, boolean selected,
                             boolean hasFocus) {
-        setText(w == null ? "" : w.getName() + "   " + w.getRoot());
+        setText(w == null ? "" : w.getName() + "   " + WorkspacesTreeRenderer.tildePath(w.getRoot().toString()));
       }
     });
     if (preselected != null) workspaceCombo.setSelectedItem(preselected);

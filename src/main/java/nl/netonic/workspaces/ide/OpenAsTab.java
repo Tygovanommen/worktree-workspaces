@@ -1,5 +1,6 @@
 package nl.netonic.workspaces.ide;
 
+import com.intellij.ide.GeneralSettings;
 import com.intellij.ide.impl.ProjectUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
@@ -46,11 +47,18 @@ public final class OpenAsTab extends ProjectAttachProcessor {
                                  @Nullable ProjectOpenedCallback callback) {
     // we're inside PhpStorm's own open: open the new window after it has finished, then merge it in
     ApplicationManager.getApplication().invokeLater(() -> {
+      // a folder without .idea would get the This Window / New Window / Merge in Current question again:
+      // answer it with New Window for this one open
+      GeneralSettings settings = GeneralSettings.getInstance();
+      int confirm = settings.getConfirmOpenNewProject();
+      settings.setConfirmOpenNewProject(GeneralSettings.OPEN_PROJECT_NEW_WINDOW);
       try {
         Project opened = ProjectUtil.openOrImport(projectDir, null, true);
         if (opened != null) Tickets.mergeIntoTabLater(opened);
       } catch (Exception e) {
         LOG.warn("Could not open " + projectDir + " as a tab", e);
+      } finally {
+        settings.setConfirmOpenNewProject(confirm);
       }
     }, ModalityState.nonModal());
     return true;

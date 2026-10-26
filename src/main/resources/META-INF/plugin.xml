@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>nl.netonic.worktree-workspaces</id>
   <name>Worktree Workspaces</name>
-  <version>0.2.4</version>
+  <version>0.2.5</version>
   <vendor url="https://netonic.nl">Netonic</vendor>
   <idea-version since-build="262"/>
 
@@ -21,6 +21,18 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <p>0.2.5</p>
+    <ul>
+      <li>Toolbar switcher: <i>Finish KEY…</i> for this window's ticket and <i>Finish Other Ticket</i> for the rest
+          of the workspace. The search field is always shown; typing finds every ticket as <i>workspace / ticket</i>.</li>
+      <li>The switcher and <i>Switch Ticket</i> use the Workspaces icon instead of Git's branch icon.</li>
+      <li>The Workspaces panel opens with only the current window's workspace expanded.</li>
+      <li>New Ticket shows the workspace path as <code>~/…</code>, like the panel.</li>
+      <li>Fixed: <i>Merge in Current</i> on a folder without <code>.idea</code> asked the Open Project question a
+          second time.</li>
+      <li>Fixed: the <i>Get from VCS</i> dialog still didn't appear in 0.2.4: PhpStorm couldn't place the plugin's
+          listener before its own.</li>
+    </ul>
     <p>0.2.4</p>
     <ul>
       <li>New Workspace: <i>Open in</i> a new tab, a new window or this window; the default is set in Settings.</li>
@@ -78,9 +90,10 @@
     <notificationGroup id="Worktree Workspaces" displayType="BALLOON"/>
     <applicationConfigurable parentId="tools" id="nl.netonic.worktree-workspaces" displayName="Worktree Workspaces"
                              instance="nl.netonic.workspaces.ide.ui.WorkspacesConfigurable"/>
-    <!-- before PhpStorm's own listeners, which open the clone as a project -->
+    <!-- before PhpStorm's own listeners, which open the clone as a project. ProjectDirCheckoutListener is
+         order="first", so ours needs "first" too: "before" alone can't be sorted and the EP throws (nothing opens) -->
     <checkoutListener implementation="nl.netonic.workspaces.ide.CloneListener" id="WorktreeWorkspacesClone"
-                      order="before ProjectDirCheckoutListener"/>
+                      order="first, before ProjectDirCheckoutListener"/>
     <!-- the Open Project dialog's third button (PhpStorm's Attach) while the option is on, macOS only -->
     <projectAttachProcessor implementation="nl.netonic.workspaces.ide.OpenAsTab" order="first"/>
   </extensions>
@@ -119,7 +132,7 @@
             text="Finish Ticket…" description="Close the tab and remove the ticket's worktrees and folder"
             icon="AllIcons.Actions.Commit"/>
     <action id="WorktreeWorkspaces.SwitchTicket" class="nl.netonic.workspaces.ide.actions.SwitchTicketAction"
-            text="Switch Ticket…" description="Search every ticket in every workspace and jump to its tab" icon="AllIcons.Vcs.Branch"/>
+            text="Switch Ticket…" description="Search every ticket in every workspace and jump to its tab" icon="/icons/workspaces.svg"/>
     <action id="WorktreeWorkspaces.Refresh" class="nl.netonic.workspaces.ide.actions.SimpleActions$Refresh"
             text="Refresh" description="Re-scan workspaces and git state" icon="AllIcons.Actions.Refresh"/>
     <action id="WorktreeWorkspaces.OpenSelected" class="nl.netonic.workspaces.ide.actions.SimpleActions$OpenSelected"
