@@ -80,7 +80,11 @@ contains "Terminal window not popped open (reflection path worked)" "visible fal
 lacks "no plain 'Local' tab" "tab Local" c probe terminals "klant-x · main"
 
 section "11 Markdown run folder"
-contains "registry key on" "true" c probe registry markdown.command.runner.use.file.directory
+if [[ "$(c probe registry markdown.command.runner.use.file.directory 2>&1)" == *"is not defined"* ]]; then
+  pass "registry key gone (2026.3+: ▶ asks for the folder itself), nothing to set"
+else
+  contains "registry key on" "true" c probe registry markdown.command.runner.use.file.directory
+fi
 
 section "2 New Workspace: adopt a checkout + clone a URL, open as tab"
 c action WorktreeWorkspaces.NewWorkspace >/dev/null; dialog "New Workspace"
@@ -313,6 +317,14 @@ lacks "asked only once" "'Open Project'" c windows
 until_has 60 "project klant-y-shop" c probe projects
 check "opened as a tab of the current window" until_has 20 "klant-x · main" c probe tabgroup klant-y-shop
 c windows | grep -q "'Open Project'" && c esc >/dev/null
+# 2026.3: a folder opened before also enables PhpStorm's WorkspaceModelCacheAttachProcessor (Attach, order first)
+c closeproject klant-y-shop >/dev/null; until_lacks 30 "project klant-y-shop" c probe projects
+c focus "klant-x · main" >/dev/null; sleep 1
+c openfolder "$ROOT/seed/klant-y-shop" >/dev/null; dialog "Open Project"
+contains "opened before: still Merge in Current" "button 'Merge in Current'" c ui
+lacks "  … not Attach" "button 'Attach'" c ui
+c click "text=Merge in Current" >/dev/null; no_dialog "Open Project"
+check "  … and merged as a tab again" until_has 60 "klant-x · main" c probe tabgroup klant-y-shop
 
 section "14 Recent Projects"
 c probe refresh >/dev/null; sleep 3

@@ -328,6 +328,13 @@ public final class Commands {
       }
       case "type" -> {
         Component c = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        Window dialog = topDialog();
+        if (!(c instanceof JTextComponent) || !SwingUtilities.isDescendingFrom(c, dialog)) {
+          // the sandbox isn't the active app, so focus may be elsewhere (2026.3): use the field the dialog focuses
+          com.intellij.openapi.ui.DialogWrapper dw =
+              com.intellij.openapi.ui.DialogWrapper.findInstance(((JDialog) dialog).getContentPane());
+          if (dw != null) c = dw.getPreferredFocusedComponent();
+        }
         if (c instanceof JTextComponent t) {
           t.setText("");
           for (char ch : arg.toCharArray()) {

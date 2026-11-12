@@ -68,6 +68,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
     styleTabs.setVisible(SystemInfo.isMac);
     repoTerminals = new JBCheckBox("Open a terminal per repo");
     markdownRun = new JBCheckBox("Run Markdown commands in the file's folder");
+    markdownRun.setVisible(MarkdownRunFolder.isAvailable()); // 2026.3+ asks for the folder itself
     tidyRecent = new JBCheckBox("Show only main of each workspace in Recent Projects");
     askAfterClone = new JBCheckBox("Offer to put a cloned repo in a workspace");
     links = new JBCheckBox("Link every repo next to its workspace");
@@ -149,6 +150,7 @@ public final class WorkspacesConfigurable implements SearchableConfigurable {
   private static JComponent below(JBCheckBox box, String text) {
     JComponent c = comment(text);
     c.setBorder(JBUI.Borders.emptyLeft(UIUtil.getCheckBoxTextHorizontalOffset(box)));
+    c.setVisible(box.isVisible()); // a macOS-only or unavailable option hides its text too
     return c;
   }
 

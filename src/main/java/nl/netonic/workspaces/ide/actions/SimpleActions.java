@@ -3,7 +3,7 @@ package nl.netonic.workspaces.ide.actions;
 import com.intellij.ide.actions.RevealFileAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
@@ -116,7 +116,7 @@ public final class SimpleActions {
       Workspace ws = ActionContext.workspace(e);
       if (project == null || ws == null) return;
       VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(ws.configFile());
-      if (vf != null) FileEditorManager.getInstance(project).openFile(vf, true);
+      if (vf != null) new OpenFileDescriptor(project, vf).navigate(true);
     }
   }
 

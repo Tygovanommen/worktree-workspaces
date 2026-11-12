@@ -66,7 +66,8 @@ public class ApiCheck {
     System.out.println("== jars used (boot classpath = loaded for every plugin):");
     for (var e : jarUse.entrySet()) {
       String name = Path.of(e.getKey()).getFileName().toString();
-      String where = boot.contains(name) ? "boot" : e.getKey().contains("vcs-git") ? "Git4Idea plugin" : "NOT BOOT";
+      String where = boot.contains(name) ? "boot" : e.getKey().contains("vcs-git") ? "Git4Idea plugin"
+          : e.getKey().contains("platform-vcs-plugin") ? "VCS plugin (via Git4Idea)" : "NOT BOOT";
       System.out.println("  " + name + " [" + where + "]: " + e.getValue().size() + " classes"
           + (where.equals("NOT BOOT") ? " " + e.getValue() : ""));
     }

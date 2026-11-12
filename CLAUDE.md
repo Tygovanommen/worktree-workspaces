@@ -6,7 +6,7 @@ Claude sessions: `docs/PERFORMANCE.md`.
 
 ## Status (26 Oct 2026)
 
-- Version 0.2.5, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
+- Version 0.2.6, id `nl.netonic.worktree-workspaces`, vendor Netonic, `since-build` 262 (PhpStorm 2026.2+).
   Distributed via GitHub Releases + `updatePlugins.xml` (custom plugin repository), not the Marketplace.
 - Verified: compiles against PhpStorm 2026.2.3 (build 262.10968.76) jars; `CoreTests` pass on real git repos;
   `tools/api-check.sh` reports no internal / experimental / deprecated API use and no missing members; every
@@ -115,6 +115,9 @@ tools/sandbox/capture.sh   # docs/screenshots/*.png from the same sandbox
 - Shots are painted from Swing at 2×, so no Screen Recording permission is needed; traffic lights, dialog title
   and shadow are drawn by the helper. Quit through `cmd.sh quit` (`demo.sh --stop` does): a kill saves no settings.
 - PhpStorm 2026.2's jars are Java 25 class files, so javac must be 25; output targets `--release 21`.
+- 2026.3 moved the VCS platform (`com.intellij.openapi.vcs.*`, `com.intellij.dvcs.*`) from `lib/` into the bundled
+  plugin `plugins/platform-vcs-plugin` (id `com.intellij.platform.vcs`). At runtime Git4Idea brings it in; the
+  classpath in `build.sh`, `api-check.sh` and `demo.sh` adds that folder when it exists.
   `JAVA_HOME` defaults to PhpStorm's bundled JBR (has `javac`, no `jar`: `build.sh` falls back to `zip`).
 - CI: `tests.yml` runs `CoreTests` on every push (macOS + Linux, no PhpStorm). `release.yml` runs by hand (Actions › Release ›
   Run workflow; creates tag `v<version>` itself) or on a pushed `v*` tag:
@@ -175,6 +178,9 @@ tools/sandbox/capture.sh   # docs/screenshots/*.png from the same sandbox
   `OpenAsTab` takes that slot only with a path and an open project (`isEnabled`), so module detach and
   `canAttachToProject()` still reach PhpStorm's processor. It overrides the stable `attachToProject`, not the
   `@Experimental` `attachToProjectAsync`, and opens via `invokeLater` (it runs inside PhpStorm's own open).
+  2026.3 added `WorkspaceModelCacheAttachProcessor` (`order="first"`, id of the same name; an Attach enabled for any
+  folder with a project-model cache, i.e. opened before): `OpenAsTab` is `order="first, before
+  WorkspaceModelCacheAttachProcessor"`, else the bundled one wins the tie (e2e.sh section 15 reopens a folder for this).
 - macOS window tabs (`MacWinTabsHandlerV2`) are drawn by PhpStorm in Swing: `com.intellij.ui.mac.WindowTabsComponent`,
   a `JBTabsImpl` whose `TabInfo.getObject()` is the window's `IdeFrameImpl`. Its painter ignores `TabInfo` colors and
   uses only the theme keys `MainWindow.Tab.*`, so `WindowTabs` sets `MainWindow.Tab.background` / `hoverBackground`

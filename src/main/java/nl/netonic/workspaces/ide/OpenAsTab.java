@@ -18,7 +18,8 @@ import java.nio.file.Path;
  * "Merge in Current" in PhpStorm's Open Project dialog (This Window / New Window / …): opens the project in a new
  * window and merges that into the current window as a tab (macOS).
  *
- * <p>The dialog has one spare button, filled by the first enabled {@code projectAttachProcessor}; registered first,
+ * <p>The dialog has one spare button, filled by the first enabled {@code projectAttachProcessor}; registered first
+ * (and before 2026.3's {@code WorkspaceModelCacheAttachProcessor}, PhpStorm's Attach for folders opened before),
  * this one takes the place of PhpStorm's Attach while the option is on. Without a path (module detach,
  * {@code canAttachToProject()}) it stays disabled so PhpStorm's own processor still handles those.
  */

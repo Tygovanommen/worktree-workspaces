@@ -13,7 +13,9 @@ fi
 JAVAC="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 ASM="$PS/lib/intellij.libraries.asm.jar"
-CP=$(find "$PS/lib" "$PS/plugins/vcs-git/lib" -name '*.jar' | tr '\n' ':')
+# 2026.3+ ships the VCS platform as a bundled plugin (com.intellij.platform.vcs) instead of in lib/
+VCS_LIB="$PS/plugins/platform-vcs-plugin/lib"; [ -d "$VCS_LIB" ] || VCS_LIB=
+CP=$(find "$PS/lib" "$PS/plugins/vcs-git/lib" ${VCS_LIB:+"$VCS_LIB"} -name '*.jar' | tr '\n' ':')
 
 mkdir -p build/tools
 "$JAVAC" -cp "$ASM" -d build/tools tools/ApiCheck.java

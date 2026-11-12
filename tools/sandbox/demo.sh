@@ -18,7 +18,9 @@ PS="${PHPSTORM_CONTENTS:-$HOME/Applications/PhpStorm.app/Contents}"
 USER_CONFIG="${PHPSTORM_CONFIG:-$HOME/Library/Application Support/JetBrains/PhpStorm2026.2}"
 JDK="$PS/jbr/Contents/Home/bin"
 ZIP=$(ls build/distributions/worktree-workspaces-*.zip | tail -1)
-CP=$(find "$PS/lib" -name '*.jar' | tr '\n' ':')
+# 2026.3+ ships the VCS platform as a bundled plugin (com.intellij.platform.vcs) instead of in lib/
+VCS_LIB="$PS/plugins/platform-vcs-plugin/lib"; [ -d "$VCS_LIB" ] || VCS_LIB=
+CP=$(find "$PS/lib" "$PS/plugins/vcs-git/lib" ${VCS_LIB:+"$VCS_LIB"} -name '*.jar' | tr '\n' ':')
 
 case "$ROOT" in /tmp/*|/private/tmp/*) ;; *) echo "demo root must be under /tmp" >&2; exit 1 ;; esac
 mkdir -p "$ROOT"

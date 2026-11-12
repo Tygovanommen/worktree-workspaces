@@ -15,7 +15,9 @@ JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 JAR="${JAVA_HOME:+$JAVA_HOME/bin/}jar"
 VERSION=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' src/main/resources/META-INF/plugin.xml | head -1)
 
-CP=$(find "$PS/lib" "$PS/plugins/vcs-git/lib" -name '*.jar' | tr '\n' ':')
+# 2026.3+ ships the VCS platform as a bundled plugin (com.intellij.platform.vcs) instead of in lib/
+VCS_LIB="$PS/plugins/platform-vcs-plugin/lib"; [ -d "$VCS_LIB" ] || VCS_LIB=
+CP=$(find "$PS/lib" "$PS/plugins/vcs-git/lib" ${VCS_LIB:+"$VCS_LIB"} -name '*.jar' | tr '\n' ':')
 rm -rf build && mkdir -p build/core build/test build/main build/plugin/worktree-workspaces/lib build/distributions
 
 echo "== core + tests"
